@@ -43,6 +43,7 @@ class ChatbotInterface:
         self.data_preprocessor = data_preprocessor
         self.model_trainer = model_trainer
         self.user_location = None
+        self.production_mode = False
         self.disease_to_specialty = self._build_disease_specialty_mapping()
         
         # Fix feature names issue by ensuring consistency
@@ -180,26 +181,35 @@ class ChatbotInterface:
         """Get user information and location"""
         print("-----------------------------------HealthCare ChatBot-----------------------------------")
         print("\nYour Name? \t\t\t\t\t", end="->")
-        try:
+        while True:
             name = input("").strip()
+            if name.lower() == 'undo':
+                print("Undo: Please enter your name again.")
+                continue
             if name:
                 print(f"Hello {name}! 👋")
             else:
                 print("Hello! 👋")
                 name = "User"
-            # Ask for user location
-            print("Which city or country are you in? (for doctor recommendations)")
-            print("Location: ", end="->")
-            location = input("").strip()
-            self.user_location = location if location else None
-            return name
-        except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
-            exit()
-        except Exception as e:
-            print(f"⚠️  Input error: {e}")
-            self.user_location = None
-            return "User"
+            break
+        while True:
+            location = self.get_location()
+            if location:
+                self.user_location = location
+                break
+        # Return both name and location for further undo handling in the next step
+        return name, self.user_location
+
+    def get_location(self):
+        while True:
+            location = input("Please enter your location: ").strip()
+            if location.lower() == 'undo':
+                print("Let's try entering your location again.")
+                continue  # Repeats the prompt
+            if location:  # If not empty
+                return location
+            else:
+                print("Location cannot be empty. Please try again.")
 
     def check_pattern(self, dis_list, inp):
         """Check pattern matching for symptoms with improved matching"""
@@ -222,78 +232,76 @@ class ChatbotInterface:
     def get_valid_input(self, prompt, valid_options=None, input_type=str, symptom_mode=False):
         """Get valid input from user with error handling and fuzzy matching for symptoms if symptom_mode is True."""
         while True:
-            try:
-                user_input = input(prompt).strip().lower()
-                if input_type == int:
+            user_input = input(prompt).strip().lower()
+            if user_input == 'undo':
+                return 'undo'
+            if input_type == int:
+                try:
                     return int(user_input)
-                elif valid_options:
-                    if user_input in valid_options:
-                        return user_input
-                    else:
-                        print(f"Please enter one of: {', '.join(valid_options)}")
-                        continue
-                elif symptom_mode:
-                    # Generalized special handling for generic terms
-                    similar_options = [s for s in self.feature_names if user_input in s]
-                    if len(similar_options) > 3:
-                        print(f"You entered '{user_input}'. Please specify the type(s):")
-                        for i, opt in enumerate(similar_options):
-                            print(f"  {i+1}) {opt}")
-                        print(f"  0) None of these / skip")
-                        selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
-                        indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-                        for idx in indices:
-                            if 1 <= idx <= len(similar_options):
-                                if similar_options[idx-1] not in corrected:
-                                    corrected.append(similar_options[idx-1])
-                        continue
-                    if user_input == 'fever':
-                        fever_options = [s for s in self.feature_names if 'fever' in s]
-                        print("You entered 'fever'. Please specify the type(s) of fever:")
-                        for i, opt in enumerate(fever_options):
-                            print(f"  {i+1}) {opt}")
-                        print(f"  0) None of these / skip")
-                        selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
-                        indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-                        for idx in indices:
-                            if 1 <= idx <= len(fever_options):
-                                if user_input not in self.feature_names:
-                                    self.feature_names.append(fever_options[idx-1])
-                                if fever_options[idx-1] not in self.feature_names:
-                                    self.feature_names.append(fever_options[idx-1])
-                        continue
-                    # Fuzzy match for symptoms
-                    if user_input in self.feature_names:
-                        return user_input
-                    closest = self.get_closest_symptom(user_input)
-                    if closest:
-                        # Calculate similarity ratio
-                        ratio = SequenceMatcher(None, user_input, closest).ratio()
-                        if ratio > 0.8:
-                            print(f"Interpreting '{user_input}' as '{closest}'.")
+                except ValueError:
+                    print("Please enter a valid number.")
+                    continue
+            elif valid_options:
+                if user_input in valid_options:
+                    return user_input
+                else:
+                    print(f"Please enter one of: {', '.join(valid_options)}")
+                    continue
+            elif symptom_mode:
+                # Generalized special handling for generic terms
+                similar_options = [s for s in self.feature_names if user_input in s]
+                if len(similar_options) > 3:
+                    print(f"You entered '{user_input}'. Please specify the type(s):")
+                    for i, opt in enumerate(similar_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(similar_options):
+                            if similar_options[idx-1] not in corrected:
+                                corrected.append(similar_options[idx-1])
+                    continue
+                if user_input == 'fever':
+                    fever_options = [s for s in self.feature_names if 'fever' in s]
+                    print("You entered 'fever'. Please specify the type(s) of fever:")
+                    for i, opt in enumerate(fever_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(fever_options):
+                            if user_input not in self.feature_names:
+                                self.feature_names.append(fever_options[idx-1])
+                            if fever_options[idx-1] not in self.feature_names:
+                                self.feature_names.append(fever_options[idx-1])
+                    continue
+                # Fuzzy match for symptoms
+                if user_input in self.feature_names:
+                    return user_input
+                closest = self.get_closest_symptom(user_input)
+                if closest:
+                    # Calculate similarity ratio
+                    ratio = SequenceMatcher(None, user_input, closest).ratio()
+                    if ratio > 0.8:
+                        print(f"Interpreting '{user_input}' as '{closest}'.")
+                        return closest
+                    elif ratio > 0.6:
+                        confirm = input(f"Did you mean '{closest}'? (y/n): ").strip().lower()
+                        if confirm == 'y':
                             return closest
-                        elif ratio > 0.6:
-                            confirm = input(f"Did you mean '{closest}'? (y/n): ").strip().lower()
-                            if confirm == 'y':
-                                return closest
-                            else:
-                                print("Please try again.")
-                                continue
                         else:
-                            print("Symptom not recognized. Please try again.")
+                            print("Please try again.")
                             continue
                     else:
                         print("Symptom not recognized. Please try again.")
                         continue
                 else:
-                    return user_input
-            except ValueError:
-                print("Please enter a valid number.")
-            except KeyboardInterrupt:
-                print("\n👋 Goodbye!")
-                exit()
-            except Exception as e:
-                print(f"Input error: {e}. Please try again.")
+                    print("Symptom not recognized. Please try again.")
+                    continue
+            else:
+                return user_input
 
     def _get_feature_importances(self):
         """Get feature importances from the underlying model, even if calibrated."""
@@ -480,16 +488,23 @@ class ChatbotInterface:
     def start_chatbot(self):
         try:
             print("🤖 Starting Medically Enhanced Healthcare Chatbot...")
-            self.getInfo()
-            print("Please choose input method:")
-            print("1) Traditional (one symptom at a time)")
-            print("2) Free text (write all symptoms in one sentence)")
-            method = input("Enter 1 or 2: ").strip()
+            name, location = self.getInfo()
+            while True:
+                print("Please choose input method:")
+                print('Type "undo" to go back and change your location.')
+                print("1) Traditional (one symptom at a time)")
+                print("2) Free text (write all symptoms in one sentence)")
+                method = self.get_valid_input("Enter 1 or 2: ", valid_options=["1", "2"])
+                if method == 'undo':
+                    print("Undo: Returning to location input.")
+                    self.user_location = self.get_location()
+                    continue
+                else:
+                    break
             if method == "2":
                 print("Please write all the symptoms you are experiencing in one sentence (e.g., I have headache and fever and muscle pain):")
                 user_text = input("-> ")
                 # --- Tokenize and fuzzy-correct all user-entered symptoms ---
-                import re
                 leading_phrases = [
                     r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
                     r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
@@ -574,83 +589,51 @@ class ChatbotInterface:
                     print("Thank you for using Healthcare Chatbot! 🙏")
                     print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
                     return
-                # Always show review/edit step before follow-ups or diagnosis
+                # Ask for duration (with confirmation)
                 while True:
-                    print(f"\nHere are the symptoms I have: {', '.join(extracted)}")
-                    confirm = input("Would you like to add, remove, or edit any symptoms? (y/n)\n-> ").strip().lower()
-                    if confirm == "y":
-                        print("Enter the full, final list of symptoms separated by commas:")
-                        final = input("-> ").strip().lower()
-                        raw_symptoms = [s.strip().replace(' ', '_') for s in final.split(',') if s.strip()]
-                        validated = []
-                        for token in raw_symptoms:
-                            # Generalized special handling for generic terms
-                            similar_options = [s for s in self.feature_names if token in s]
-                            if len(similar_options) > 3:
-                                print(f"You entered '{token}'. Please specify the type(s):")
-                                for i, opt in enumerate(similar_options):
-                                    print(f"  {i+1}) {opt}")
-                                print(f"  0) None of these / skip")
-                                selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
-                                indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-                                for idx in indices:
-                                    if 1 <= idx <= len(similar_options):
-                                        if similar_options[idx-1] not in validated:
-                                            validated.append(similar_options[idx-1])
-                                continue
-                            if token in self.feature_names:
-                                if token not in validated:
-                                    validated.append(token)
-                            else:
-                                matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
-                                if matches:
-                                    best = matches[0]
-                                    ratio = SequenceMatcher(None, token, best).ratio()
-                                    if ratio > 0.8:
-                                        print(f"Interpreting '{token}' as '{best}'.")
-                                        validated.append(best)
-                                    elif ratio > 0.6:
-                                        print(f"Unrecognized symptom: '{token}'. Did you mean:")
-                                        for i, match in enumerate(matches):
-                                            print(f"  {i+1}) {match}")
-                                        print(f"  0) None of these / skip")
-                                        while True:
-                                            choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
-                                            if choice.isdigit():
-                                                idx = int(choice)
-                                                if idx == 0:
-                                                    print(f"Skipping '{token}'.")
-                                                    break
-                                                elif 1 <= idx <= len(matches):
-                                                    if matches[idx-1] not in validated:
-                                                        validated.append(matches[idx-1])
-                                                    break
-                                            print("Invalid choice. Please try again.")
-                                    else:
-                                        print(f"No good match found for '{token}'. Skipping.")
-                                else:
-                                    print(f"No close match found for '{token}'. Skipping.")
-                        if validated:
-                            extracted = validated
-                        else:
-                            print("No valid symptoms entered. Please try again.")
-                            continue
-                    else:
+                    num_days = self.get_valid_input('Okay. From how many days? ', input_type=int)
+                    print(f'You entered {num_days} days. Is this correct? (y/n)')
+                    confirm_days = input('-> ').strip().lower()
+                    if confirm_days == 'y':
                         break
-                confirmed_symptoms = extracted
+                    elif confirm_days == 'n':
+                        print('Please re-enter the number of days.')
+                        continue
+                    else:
+                        print('Please enter y or n.')
+                        continue
                 # Ask about relevant symptoms for each confirmed symptom (no duplicates)
-                all_symptoms = set(confirmed_symptoms)
-                for symptom in confirmed_symptoms:
+                all_symptoms = set(extracted)
+                related_answers = []
+                i = 0
+                while i < len(extracted):
+                    symptom = extracted[i]
                     relevant = self.get_medical_relevant_symptoms(symptom)
                     if relevant:
                         print(f"Are you experiencing any of these symptoms related to {symptom}?")
-                        for rel in relevant:
-                            if rel not in all_symptoms:
-                                response = self.get_valid_input(f"   {rel}? (yes/no): ", valid_options=["yes", "no"], symptom_mode=True)
-                                if response == "yes":
-                                    all_symptoms.add(rel)
-                # Ask for duration
-                num_days = self.get_valid_input("Okay. From how many days? : ", input_type=int)
+                        rels = [rel for rel in relevant if rel not in all_symptoms]
+                        j = 0
+                        while j < len(rels):
+                            rel = rels[j]
+                            response = self.get_valid_input(f"   {rel}? (yes/no/back): ", valid_options=["yes", "no", "back"], symptom_mode=True)
+                            if response == "back":
+                                if j > 0:
+                                    j -= 1
+                                    continue
+                                else:
+                                    print('Already at the first related symptom.')
+                                    continue
+                            elif response == "yes":
+                                all_symptoms.add(rel)
+                                related_answers.append((rel, "yes"))
+                                j += 1
+                            elif response == "no":
+                                related_answers.append((rel, "no"))
+                                j += 1
+                            else:
+                                print('Please enter yes, no, or back.')
+                                continue
+                    i += 1
                 # Diagnose
                 predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
                 conf_str = f"{confidence:.1%}" if confidence is not None else "Unknown"
@@ -722,186 +705,198 @@ class ChatbotInterface:
 
     def tree_to_code(self, tree, feature_names, confirmed_symptoms=None):
         """
-        Main chatbot interaction function - MEDICALLY ENHANCED VERSION
+        Main chatbot interaction function - ENHANCED VERSION (English, robust undo)
         """
         try:
             if confirmed_symptoms is None:
-                confirmed_symptoms = []
-                # Step 1: Get initial symptom
                 while True:
-                    self.text_to_speech("Enter the symptom you are experiencing")
-                    print("\nEnter the symptom you are experiencing  \t\t", end="->")
-                    symptom_input = self.get_valid_input("", symptom_mode=True)
+                    # Step 1: Symptom entry
+                    confirmed_symptoms = []
+                    restart_symptom_entry = False
+                    while True:
+                        self.text_to_speech("Enter the symptom you are experiencing")
+                        print("\nEnter the symptom you are experiencing  \t\t", end="->")
+                        symptom_input = self.get_valid_input("", symptom_mode=True)
+                        if symptom_input == 'undo':
+                            print("Undo: Please enter the symptom again.")
+                            continue
+                        if not symptom_input:
+                            print("Please enter a symptom.")
+                            continue
+                        conf, matched_symptoms = self.check_pattern(self.feature_names, symptom_input)
+                        if conf == 1:
+                            print("🔍 Searches related to input: ")
+                            for num, symptom in enumerate(matched_symptoms):
+                                print(f"{num}) {symptom}")
+                            if len(matched_symptoms) > 1:
+                                selection = self.get_valid_input(
+                                    f"Select the one you meant (0 - {len(matched_symptoms)-1}): ", input_type=int
+                                )
+                                if 0 <= selection < len(matched_symptoms):
+                                    confirmed_symptoms.append(matched_symptoms[selection])
+                                    break
+                                else:
+                                    print("Invalid selection. Please try again.")
+                            else:
+                                confirmed_symptoms.append(matched_symptoms[0])
+                                break
+                        else:
+                            print("❌ Enter valid symptom. Please try again.")
 
-                    if not symptom_input:
-                        print("Please enter a symptom.")
+                    # Step 1.5: Symptom review/edit
+                    while True:
+                        print(f"\nHere are the symptoms I have: {', '.join(confirmed_symptoms)}")
+                        confirm = input("Would you like to add, remove, or edit any symptoms? (y/n)\n-> ").strip().lower()
+                        if confirm == "y":
+                            print("Enter the full, final list of symptoms separated by commas (or type 'undo' to go back and re-enter symptoms):")
+                            final = input("-> ").strip().lower()
+                            if final == 'undo':
+                                print("Undo: Returning to symptom entry step.")
+                                restart_symptom_entry = True
+                                break
+                            raw_symptoms = [s.strip().replace(' ', '_') for s in final.split(',') if s.strip()]
+                            validated = []
+                            for token in raw_symptoms:
+                                if token in self.feature_names:
+                                    validated.append(token)
+                                else:
+                                    matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
+                                    if matches:
+                                        best = matches[0]
+                                        ratio = SequenceMatcher(None, token, best).ratio()
+                                        if ratio > 0.8:
+                                            print(f"Interpreting '{token}' as '{best}'.")
+                                            validated.append(best)
+                                        elif ratio > 0.6:
+                                            print(f"Unrecognized symptom: '{token}'. Did you mean:")
+                                            for i, match in enumerate(matches):
+                                                print(f"  {i+1}) {match}")
+                                            print(f"  0) None of these / skip")
+                                            while True:
+                                                choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
+                                                if choice.isdigit():
+                                                    idx = int(choice)
+                                                    if idx == 0:
+                                                        print(f"Skipping '{token}'.")
+                                                        break
+                                                    elif 1 <= idx <= len(matches):
+                                                        if matches[idx-1] not in validated:
+                                                            validated.append(matches[idx-1])
+                                                        break
+                                            print("Invalid choice. Please try again.")
+                                        else:
+                                            print(f"No good match found for '{token}'. Skipping.")
+                                    else:
+                                        print(f"No close match found for '{token}'. Skipping.")
+                            if validated:
+                                confirmed_symptoms = validated
+                            else:
+                                print("No valid symptoms entered. Please try again.")
+                                continue
+                        else:
+                            break
+                    if restart_symptom_entry:
                         continue
 
-                    conf, matched_symptoms = self.check_pattern(self.feature_names, symptom_input)
-                    if conf == 1:
-                        print("🔍 Searches related to input: ")
-                        for num, symptom in enumerate(matched_symptoms):
-                            print(f"{num}) {symptom}")
-                        if len(matched_symptoms) > 1:
-                            selection = self.get_valid_input(
-                                f"Select the one you meant (0 - {len(matched_symptoms)-1}): ", input_type=int
-                            )
-                            if 0 <= selection < len(matched_symptoms):
-                                confirmed_symptoms.append(matched_symptoms[selection])
-                                break
-                            else:
-                                print("Invalid selection. Please try again.")
-                        else:
-                            confirmed_symptoms.append(matched_symptoms[0])
+                    # Step 2: Days input (with confirmation)
+                    while True:
+                        num_days = self.get_valid_input("Okay. For how many days have you had these symptoms? : ", input_type=int)
+                        print(f'You entered {num_days} days. Is this correct? (y/n)')
+                        confirm_days = input('-> ').strip().lower()
+                        if confirm_days == 'y':
                             break
-                    else:
-                        print("❌ Enter valid symptom. Please try again.")
-                # Always show review/edit step before follow-ups or diagnosis
-                while True:
-                    print(f"\nHere are the symptoms I have: {', '.join(confirmed_symptoms)}")
-                    confirm = input("Would you like to add, remove, or edit any symptoms? (y/n)\n-> ").strip().lower()
-                    if confirm == "y":
-                        print("Enter the full, final list of symptoms separated by commas:")
-                        final = input("-> ").strip().lower()
-                        raw_symptoms = [s.strip().replace(' ', '_') for s in final.split(',') if s.strip()]
-                        validated = []
-                        for token in raw_symptoms:
-                            if token in self.feature_names:
-                                validated.append(token)
-                            else:
-                                matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
-                                if matches:
-                                    best = matches[0]
-                                    ratio = SequenceMatcher(None, token, best).ratio()
-                                    if ratio > 0.8:
-                                        print(f"Interpreting '{token}' as '{best}'.")
-                                        validated.append(best)
-                                    elif ratio > 0.6:
-                                        print(f"Unrecognized symptom: '{token}'. Did you mean:")
-                                        for i, match in enumerate(matches):
-                                            print(f"  {i+1}) {match}")
-                                        print(f"  0) None of these / skip")
-                                        while True:
-                                            choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
-                                            if choice.isdigit():
-                                                idx = int(choice)
-                                                if idx == 0:
-                                                    print(f"Skipping '{token}'.")
-                                                    break
-                                                elif 1 <= idx <= len(matches):
-                                                    if matches[idx-1] not in validated:
-                                                        validated.append(matches[idx-1])
-                                                    break
-                                            print("Invalid choice. Please try again.")
-                                    else:
-                                        print(f"No good match found for '{token}'. Skipping.")
-                                else:
-                                    print(f"No close match found for '{token}'. Skipping.")
-                        if validated:
-                            confirmed_symptoms = validated
-                        else:
-                            print("No valid symptoms entered. Please try again.")
+                        elif confirm_days == 'n':
+                            print('Please re-enter the number of days.')
                             continue
+                        else:
+                            print('Please enter y or n.')
+                            continue
+                    if num_days == 'undo':
+                        continue  # Go back to symptom review
+
+                    # Step 3: Yes/No follow-up questions (with back command)
+                    relevant_symptoms = self.get_medical_relevant_symptoms(confirmed_symptoms[0])
+                    if relevant_symptoms:
+                        self.text_to_speech("Are you experiencing any of these related symptoms?")
+                        if not self.production_mode:
+                            print("🔍 Are you experiencing any of these medically related symptoms?")
+                        rels = [symptom for symptom in relevant_symptoms if symptom not in confirmed_symptoms]
+                        j = 0
+                        while j < len(rels):
+                            symptom = rels[j]
+                            self.text_to_speech(f"{symptom}, are you experiencing it?")
+                            response = self.get_valid_input(f"   {symptom}? (yes/no/back): ", valid_options=["yes", "no", "back"], symptom_mode=True)
+                            if response == 'back':
+                                if j > 0:
+                                    j -= 1
+                                    continue
+                                else:
+                                    print('Already at the first related symptom.')
+                                    continue
+                            elif response == "yes":
+                                confirmed_symptoms.append(symptom)
+                                j += 1
+                            elif response == "no":
+                                j += 1
+                            else:
+                                print('Please enter yes, no, or back.')
+                                continue
+
+                    # Step 4: Make prediction with medical validation
+                    predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(confirmed_symptoms)
+
+                    # Calculate severity details for display
+                    _, _, _, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
+
+                    # After model prediction, apply post-processing (only once, before any output)
+                    post_pred, post_conf, was_swapped = self.postprocess_prediction(predicted_disease, confidence, top_3_diseases, top_3_confidences, [s for s, _ in present_symptoms])
+                    if was_swapped:
+                        print("\n[INFO] Based on your symptoms, a mild/common condition is more likely. Overriding model prediction.")
+                        predicted_disease = post_pred
+                        confidence = post_conf
+                        # Update description and precautions for the new disease
+                        description = self.data_preprocessor.description_list.get(predicted_disease, "")
+                        precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+                        severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
                     else:
-                        break
+                        description = self.data_preprocessor.description_list.get(predicted_disease, "")
+                        precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+                        severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
 
-            # Step 2: Get duration
-            num_days = self.get_valid_input("Okay. From how many days? : ", input_type=int)
+                    # Always display detailed debug output for clarity
+                    self.display_debug_output(predicted_disease, confidence, severity_score, severity_level,
+                                            high_severity_symptoms, present_symptoms, severity_recommendations)
 
-            # Step 3: Get medically relevant follow-up symptoms
-            relevant_symptoms = self.get_medical_relevant_symptoms(confirmed_symptoms[0])
-            if relevant_symptoms:
-                self.text_to_speech("Are you experiencing any of these related symptoms?")
-                if not self.production_mode:
-                    print("🔍 Are you experiencing any of these medically related symptoms?")
-                for symptom in relevant_symptoms:
-                    self.text_to_speech(f"{symptom}, are you experiencing it?")
-                    response = self.get_valid_input(f"   {symptom}? (yes/no): ", valid_options=["yes", "no"], symptom_mode=True)
-                    if response == "yes":
-                        confirmed_symptoms.append(symptom)
+                    # Show top-3 diseases if confidence is low
+                    if confidence is not None and confidence < 0.6 and top_3_diseases is not None:
+                        print("\nOther possible conditions:")
+                        for i, (disease, conf) in enumerate(zip(top_3_diseases, top_3_confidences)):
+                            print(f"  {i+1}) {disease} (confidence: {conf:.1%})")
 
-            # Step 3.5: Additional comprehensive symptom collection
-            if not self.production_mode:
-                print(f"\n📋 Current symptoms: {', '.join(confirmed_symptoms)}")
-            # Require minimum 4 symptoms for diagnosis
-            if len(confirmed_symptoms) < 4:
-                if not self.production_mode:
-                    print(f"\n⚠️  I need at least 4 symptoms for a proper diagnosis. You have {len(confirmed_symptoms)}.")
-                    print("Let me ask about some common symptoms:")
-                # Ask about general symptoms
-                general_symptoms = ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']
-                for symptom in general_symptoms:
-                    if symptom not in confirmed_symptoms:
-                        response = self.get_valid_input(f"   {symptom}? (yes/no): ", valid_options=["yes", "no"], symptom_mode=True)
-                        if response == "yes":
-                            confirmed_symptoms.append(symptom)
-                        if len(confirmed_symptoms) >= 4:
-                            break
-                # If still not enough, ask about specific symptoms based on initial symptom
-                if len(confirmed_symptoms) < 4:
-                    if confirmed_symptoms[0] in ['stomach_pain', 'abdominal_pain']:
-                        additional_gi = ['nausea', 'vomiting', 'diarrhoea', 'constipation']
-                        for symptom in additional_gi:
-                            if symptom not in confirmed_symptoms:
-                                response = self.get_valid_input(f"   {symptom}? (yes/no): ", valid_options=["yes", "no"], symptom_mode=True)
-                                if response == "yes":
-                                    confirmed_symptoms.append(symptom)
-                                if len(confirmed_symptoms) >= 4:
-                                    break
+                    # Show description and precautions in debug mode
+                    desc_to_show = None
+                    if isinstance(description, list):
+                        seen = set()
+                        for desc in description:
+                            if desc and desc not in seen:
+                                desc_to_show = desc
+                                break
+                    elif isinstance(description, str) and description.strip():
+                        desc_to_show = description.strip()
+                    if desc_to_show:
+                        print(f"\n📝 Description: {desc_to_show}")
+                    else:
+                        print("\n📝 Description: No description available for this condition.")
+                    if precautions:
+                        print("\n💡 Take the following precautions:")
+                        for i, precaution in enumerate(precautions):
+                            if precaution.strip():
+                                print(f"   {i+1}) {precaution}")
+                    
+                    # Doctor recommendations (always show in both modes)
+                    self._provide_doctor_recommendations(predicted_disease)
 
-            # Step 4: Make prediction with medical validation
-            predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(confirmed_symptoms)
-
-            # Calculate severity details for display
-            _, _, _, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
-
-            # After model prediction, apply post-processing (only once, before any output)
-            post_pred, post_conf, was_swapped = self.postprocess_prediction(predicted_disease, confidence, top_3_diseases, top_3_confidences, [s for s, _ in present_symptoms])
-            if was_swapped:
-                print("\n[INFO] Based on your symptoms, a mild/common condition is more likely. Overriding model prediction.")
-                predicted_disease = post_pred
-                confidence = post_conf
-                # Update description and precautions for the new disease
-                description = self.data_preprocessor.description_list.get(predicted_disease, "")
-                precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-                severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-            else:
-                description = self.data_preprocessor.description_list.get(predicted_disease, "")
-                precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-                severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-
-            # Always display detailed debug output for clarity
-            self.display_debug_output(predicted_disease, confidence, severity_score, severity_level,
-                                    high_severity_symptoms, present_symptoms, severity_recommendations)
-
-            # Show top-3 diseases if confidence is low
-            if confidence is not None and confidence < 0.6 and top_3_diseases is not None:
-                print("\nOther possible conditions:")
-                for i, (disease, conf) in enumerate(zip(top_3_diseases, top_3_confidences)):
-                    print(f"  {i+1}) {disease} (confidence: {conf:.1%})")
-
-            # Show description and precautions in debug mode
-            desc_to_show = None
-            if isinstance(description, list):
-                seen = set()
-                for desc in description:
-                    if desc and desc not in seen:
-                        desc_to_show = desc
-                        break
-            elif isinstance(description, str) and description.strip():
-                desc_to_show = description.strip()
-            if desc_to_show:
-                print(f"\n📝 Description: {desc_to_show}")
-            else:
-                print("\n📝 Description: No description available for this condition.")
-            if precautions:
-                print("\n💡 Take the following precautions:")
-                for i, precaution in enumerate(precautions):
-                    if precaution.strip():
-                        print(f"   {i+1}) {precaution}")
-            
-            # Doctor recommendations (always show in both modes)
-            self._provide_doctor_recommendations(predicted_disease)
+                    break  # Exit the main loop if all steps are completed
 
         except Exception as e:
             print("❌ An error occurred during diagnosis:")
