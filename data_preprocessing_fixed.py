@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 # Numpy and pandas for mathematical operations
 import numpy as np
 import pandas as pd

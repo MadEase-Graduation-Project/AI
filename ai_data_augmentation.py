@@ -255,7 +255,7 @@ class AIDataAugmenter:
 Generated with AI-powered augmentation
 """
         
-        with open(filename, 'w') as f:
+        with open(filename, 'w', encoding='utf-8') as f:
             f.write(report)
         
         print(f"📄 Summary report saved as: {filename}")

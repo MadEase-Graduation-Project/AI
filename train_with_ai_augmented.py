@@ -11,6 +11,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
 from sklearn.calibration import CalibratedClassifierCV
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
@@ -296,7 +298,7 @@ class EnhancedAITrainingPipeline:
 Generated with Enhanced AI-augmented training pipeline
 """
         
-        with open("reports/enhanced_ai_augmented_training_report.md", "w") as f:
+        with open("reports/enhanced_ai_augmented_training_report.md", "w", encoding="utf-8") as f:
             f.write(report_content)
         
         print("📄 Enhanced report saved as 'enhanced_ai_augmented_training_report.md'")

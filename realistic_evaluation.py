@@ -8,6 +8,8 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import cross_val_score, StratifiedKFold
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
@@ -279,7 +281,7 @@ The cross-validation accuracy of {results['cv_accuracy']:.3f} is a more realisti
 estimate of true model performance.
 """
     
-    with open('realistic_evaluation_report.md', 'w') as f:
+    with open('realistic_evaluation_report.md', 'w', encoding='utf-8') as f:
         f.write(report)
     
     print("📄 Realistic evaluation report saved as 'realistic_evaluation_report.md'")
