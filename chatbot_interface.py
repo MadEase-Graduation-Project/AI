@@ -495,6 +495,7 @@ class ChatbotInterface:
                 print("1) Diagnosis (disease prediction)")
                 print("2) Find a doctor")
                 print("3) I am done / Exit")
+                print("(Type 'undo' to go back and enter your location.)")
                 main_choice = self.get_valid_input("Enter 1, 2, or 3: ", valid_options=["1", "2", "3", "undo"])
                 if main_choice == 'undo':
                     print("Undo: Returning to location input.")
@@ -560,7 +561,6 @@ class ChatbotInterface:
             # Continue with the original chatbot flow (diagnosis)
             while True:
                 print("Please choose input method:")
-                print('Type "undo" to go back and change your location.')
                 print("1) Traditional (one symptom at a time)")
                 print("2) Free text (write all symptoms in one sentence)")
                 method = self.get_valid_input("Enter 1 or 2: ", valid_options=["1", "2"])
@@ -713,16 +713,12 @@ class ChatbotInterface:
                     i += 1
                 # Diagnose
                 predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
-                conf_str = f"{confidence:.1%}" if confidence is not None else "Unknown"
-                # Calculate severity details for display
+                conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
                 _, _, _, present_symptoms = self.calculate_symptom_severity(list(all_symptoms))
-                # After model prediction, apply post-processing (only once, before any output)
                 post_pred, post_conf, was_swapped = self.postprocess_prediction(predicted_disease, confidence, top_3_diseases, top_3_confidences, [s for s, _ in present_symptoms])
                 if was_swapped:
-                    print("\n[INFO] Based on your symptoms, a mild/common condition is more likely. Overriding model prediction.")
                     predicted_disease = post_pred
                     confidence = post_conf
-                    # Update description and precautions for the new disease
                     description = self.data_preprocessor.description_list.get(predicted_disease, "")
                     precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
                     severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
@@ -730,15 +726,32 @@ class ChatbotInterface:
                     description = self.data_preprocessor.description_list.get(predicted_disease, "")
                     precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
                     severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-                # Always display detailed debug output for clarity
-                self.display_debug_output(predicted_disease, confidence, severity_score, severity_level,
-                                        high_severity_symptoms, present_symptoms, severity_recommendations)
-                # Show top-3 diseases if confidence is low
-                if confidence is not None and confidence < 0.6 and top_3_diseases is not None:
-                    print("\nOther possible conditions:")
-                    for i, (disease, conf) in enumerate(zip(top_3_diseases, top_3_confidences)):
-                        print(f"  {i+1}) {disease} (confidence: {conf:.1%})")
-                # Show description and precautions in debug mode
+
+                # --- NEW OUTPUT STYLE ---
+                print(f"\n\U0001F4CB Current symptoms: {', '.join(list(all_symptoms))}")
+                if confidence is None or confidence < 0.5:
+                    print(f"\n\u26A0\uFE0F  I need at least 4 symptoms for a proper diagnosis. You have {len(list(all_symptoms))}.")
+                    print("Let me ask about some common symptoms:")
+                    for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
+                        if s not in all_symptoms:
+                            yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/no): ", valid_options=["yes", "no"])
+                            if yn == "yes":
+                                all_symptoms.add(s)
+                    print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
+                    print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
+                    extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
+                    if extra and extra in self.feature_names:
+                        all_symptoms.add(extra)
+                    # Re-run prediction with updated symptoms
+                    predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
+                    conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+                if predicted_disease:
+                    print(f"\n\U0001FA7A You may have: {predicted_disease}")
+                    print(f"\U0001F52C Model confidence: {conf_str}")
+                    if confidence is not None and confidence < 0.5:
+                        print("\U0001F534 Low confidence - please consult a healthcare professional immediately")
+                else:
+                    print(f"\n\U0001F534 Unable to make a confident prediction. Please consult a healthcare professional.")
                 desc_to_show = None
                 if isinstance(description, list):
                     seen = set()
@@ -749,20 +762,20 @@ class ChatbotInterface:
                 elif isinstance(description, str) and description.strip():
                     desc_to_show = description.strip()
                 if desc_to_show:
-                    print(f"\n📝 Description: {desc_to_show}")
+                    print(f"\n\U0001F4DD Description: {desc_to_show}")
                 else:
-                    print("\n📝 Description: No description available for this condition.")
+                    print("\n\U0001F4DD Description: No description available for this condition.")
                 if precautions:
-                    print("\n💡 Take the following precautions:")
+                    print("\n\U0001F4A1 Take the following precautions:")
                     for i, precaution in enumerate(precautions):
                         if precaution.strip():
                             print(f"   {i+1}) {precaution}")
                 # Doctor recommendations (always show in both modes)
                 self._provide_doctor_recommendations(predicted_disease)
                 print("-" * 130)
-                print("Thank you for using Healthcare Chatbot! 🙏")
-                print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-                return
+                print("Thank you for using Healthcare Chatbot! \U0001F64F")
+                print("\u26A0\uFE0F  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+                return  # Return to main menu after diagnosis
             self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
             print("-" * 130)
             print("Thank you for using Healthcare Chatbot! 🙏")
@@ -912,60 +925,67 @@ class ChatbotInterface:
                                 continue
 
                     # Step 4: Make prediction with medical validation
-                    predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(confirmed_symptoms)
+                    while True:
+                        predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(confirmed_symptoms)
+                        conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+                        _, _, _, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
+                        post_pred, post_conf, was_swapped = self.postprocess_prediction(predicted_disease, confidence, top_3_diseases, top_3_confidences, [s for s, _ in present_symptoms])
+                        if was_swapped:
+                            predicted_disease = post_pred
+                            confidence = post_conf
+                            description = self.data_preprocessor.description_list.get(predicted_disease, "")
+                            precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+                            severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
+                        else:
+                            description = self.data_preprocessor.description_list.get(predicted_disease, "")
+                            precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+                            severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
 
-                    # Calculate severity details for display
-                    _, _, _, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
-
-                    # After model prediction, apply post-processing (only once, before any output)
-                    post_pred, post_conf, was_swapped = self.postprocess_prediction(predicted_disease, confidence, top_3_diseases, top_3_confidences, [s for s, _ in present_symptoms])
-                    if was_swapped:
-                        print("\n[INFO] Based on your symptoms, a mild/common condition is more likely. Overriding model prediction.")
-                        predicted_disease = post_pred
-                        confidence = post_conf
-                        # Update description and precautions for the new disease
-                        description = self.data_preprocessor.description_list.get(predicted_disease, "")
-                        precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-                        severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-                    else:
-                        description = self.data_preprocessor.description_list.get(predicted_disease, "")
-                        precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-                        severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-
-                    # Always display detailed debug output for clarity
-                    self.display_debug_output(predicted_disease, confidence, severity_score, severity_level,
-                                            high_severity_symptoms, present_symptoms, severity_recommendations)
-
-                    # Show top-3 diseases if confidence is low
-                    if confidence is not None and confidence < 0.6 and top_3_diseases is not None:
-                        print("\nOther possible conditions:")
-                        for i, (disease, conf) in enumerate(zip(top_3_diseases, top_3_confidences)):
-                            print(f"  {i+1}) {disease} (confidence: {conf:.1%})")
-
-                    # Show description and precautions in debug mode
-                    desc_to_show = None
-                    if isinstance(description, list):
-                        seen = set()
-                        for desc in description:
-                            if desc and desc not in seen:
-                                desc_to_show = desc
-                                break
-                    elif isinstance(description, str) and description.strip():
-                        desc_to_show = description.strip()
-                    if desc_to_show:
-                        print(f"\n📝 Description: {desc_to_show}")
-                    else:
-                        print("\n📝 Description: No description available for this condition.")
-                    if precautions:
-                        print("\n💡 Take the following precautions:")
-                        for i, precaution in enumerate(precautions):
-                            if precaution.strip():
-                                print(f"   {i+1}) {precaution}")
-                    
-                    # Doctor recommendations (always show in both modes)
-                    self._provide_doctor_recommendations(predicted_disease)
-
-                    break  # Exit the main loop if all steps are completed
+                        print(f"\n\U0001F4CB Current symptoms: {', '.join(confirmed_symptoms)}")
+                        if confidence is None or confidence < 0.5 or not predicted_disease or predicted_disease.lower() == 'none':
+                            print(f"\n\u26A0\uFE0F  I need at least 4 symptoms for a proper diagnosis. You have {len(confirmed_symptoms)}.")
+                            print("Let me ask about some common symptoms:")
+                            for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
+                                if s not in confirmed_symptoms:
+                                    yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/no): ", valid_options=["yes", "no"])
+                                    if yn == "yes":
+                                        confirmed_symptoms.append(s)
+                            print(f"\n\U0001F4CA Current analysis: {len(confirmed_symptoms)} symptoms, confidence: {conf_str}")
+                            print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
+                            extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
+                            if extra and extra in self.feature_names and extra not in confirmed_symptoms:
+                                confirmed_symptoms.append(extra)
+                            continue  # Re-run prediction with updated symptoms
+                        if predicted_disease:
+                            print(f"\n\U0001FA7A You may have: {predicted_disease}")
+                            print(f"\U0001F52C Model confidence: {conf_str}")
+                            if confidence is not None and confidence < 0.5:
+                                print("\U0001F534 Low confidence - please consult a healthcare professional immediately")
+                        else:
+                            print(f"\n\U0001F534 Unable to make a confident prediction. Please consult a healthcare professional.")
+                        desc_to_show = None
+                        if isinstance(description, list):
+                            seen = set()
+                            for desc in description:
+                                if desc and desc not in seen:
+                                    desc_to_show = desc
+                                    break
+                        elif isinstance(description, str) and description.strip():
+                            desc_to_show = description.strip()
+                        if desc_to_show:
+                            print(f"\n\U0001F4DD Description: {desc_to_show}")
+                        else:
+                            print("\n\U0001F4DD Description: No description available for this condition.")
+                        if precautions:
+                            print("\n\U0001F4A1 Take the following precautions:")
+                            for i, precaution in enumerate(precautions):
+                                if precaution.strip():
+                                    print(f"   {i+1}) {precaution}")
+                        self._provide_doctor_recommendations(predicted_disease)
+                        print("-" * 130)
+                        print("Thank you for using Healthcare Chatbot! \U0001F64F")
+                        print("\u26A0\uFE0F  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+                        return  # Return to main menu after diagnosis
 
         except Exception as e:
             print("❌ An error occurred during diagnosis:")
@@ -1203,7 +1223,6 @@ class ChatbotInterface:
     def run_diagnosis_flow(self):
         while True:
             print("Please choose input method:")
-            print('Type "undo" to go back and change your location or "main" to return to the main menu.')
             print("1) Traditional (one symptom at a time)")
             print("2) Free text (write all symptoms in one sentence)")
             method = self.get_valid_input("Enter 1 or 2: ", valid_options=["1", "2"])
@@ -1358,16 +1377,12 @@ class ChatbotInterface:
                 i += 1
             # Diagnose
             predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
-            conf_str = f"{confidence:.1%}" if confidence is not None else "Unknown"
-            # Calculate severity details for display
+            conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
             _, _, _, present_symptoms = self.calculate_symptom_severity(list(all_symptoms))
-            # After model prediction, apply post-processing (only once, before any output)
             post_pred, post_conf, was_swapped = self.postprocess_prediction(predicted_disease, confidence, top_3_diseases, top_3_confidences, [s for s, _ in present_symptoms])
             if was_swapped:
-                print("\n[INFO] Based on your symptoms, a mild/common condition is more likely. Overriding model prediction.")
                 predicted_disease = post_pred
                 confidence = post_conf
-                # Update description and precautions for the new disease
                 description = self.data_preprocessor.description_list.get(predicted_disease, "")
                 precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
                 severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
@@ -1375,15 +1390,32 @@ class ChatbotInterface:
                 description = self.data_preprocessor.description_list.get(predicted_disease, "")
                 precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
                 severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-            # Always display detailed debug output for clarity
-            self.display_debug_output(predicted_disease, confidence, severity_score, severity_level,
-                                    high_severity_symptoms, present_symptoms, severity_recommendations)
-            # Show top-3 diseases if confidence is low
-            if confidence is not None and confidence < 0.6 and top_3_diseases is not None:
-                print("\nOther possible conditions:")
-                for i, (disease, conf) in enumerate(zip(top_3_diseases, top_3_confidences)):
-                    print(f"  {i+1}) {disease} (confidence: {conf:.1%})")
-            # Show description and precautions in debug mode
+
+            # --- NEW OUTPUT STYLE ---
+            print(f"\n\U0001F4CB Current symptoms: {', '.join(list(all_symptoms))}")
+            if confidence is None or confidence < 0.5:
+                print(f"\n\u26A0\uFE0F  I need at least 4 symptoms for a proper diagnosis. You have {len(list(all_symptoms))}.")
+                print("Let me ask about some common symptoms:")
+                for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
+                    if s not in all_symptoms:
+                        yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/no): ", valid_options=["yes", "no"])
+                        if yn == "yes":
+                            all_symptoms.add(s)
+                print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
+                print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
+                extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
+                if extra and extra in self.feature_names:
+                    all_symptoms.add(extra)
+                # Re-run prediction with updated symptoms
+                predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
+                conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+            if predicted_disease:
+                print(f"\n\U0001FA7A You may have: {predicted_disease}")
+                print(f"\U0001F52C Model confidence: {conf_str}")
+                if confidence is not None and confidence < 0.5:
+                    print("\U0001F534 Low confidence - please consult a healthcare professional immediately")
+            else:
+                print(f"\n\U0001F534 Unable to make a confident prediction. Please consult a healthcare professional.")
             desc_to_show = None
             if isinstance(description, list):
                 seen = set()
@@ -1394,20 +1426,20 @@ class ChatbotInterface:
             elif isinstance(description, str) and description.strip():
                 desc_to_show = description.strip()
             if desc_to_show:
-                print(f"\n📝 Description: {desc_to_show}")
+                print(f"\n\U0001F4DD Description: {desc_to_show}")
             else:
-                print("\n📝 Description: No description available for this condition.")
+                print("\n\U0001F4DD Description: No description available for this condition.")
             if precautions:
-                print("\n💡 Take the following precautions:")
+                print("\n\U0001F4A1 Take the following precautions:")
                 for i, precaution in enumerate(precautions):
                     if precaution.strip():
                         print(f"   {i+1}) {precaution}")
             # Doctor recommendations (always show in both modes)
             self._provide_doctor_recommendations(predicted_disease)
             print("-" * 130)
-            print("Thank you for using Healthcare Chatbot! 🙏")
-            print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-            return
+            print("Thank you for using Healthcare Chatbot! \U0001F64F")
+            print("\u26A0\uFE0F  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+            return  # Return to main menu after diagnosis
         # Traditional mode: use tree_to_code for full interactive flow
         self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
         print("-" * 130)
