@@ -64,68 +64,6 @@ class ChatbotInterface:
             print(f"⚠️  Warning: Text-to-Speech initialization failed: {e}")
             self.tts_available = False
 
-    def handle_single_symptom_input(self, symptom_input):
-        """Robustly handle a single symptom input, with typo correction and generic term handling."""
-        corrected = []
-        token = symptom_input.strip().lower().replace(' ', '_')
-        similar_options = [s for s in self.feature_names if token in s]
-        if len(similar_options) > 3:
-            print(f"You entered '{token}'. Please specify the type(s):")
-            for i, opt in enumerate(similar_options):
-                print(f"  {i+1}) {opt}")
-            print(f"  0) None of these / skip")
-            selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
-            indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-            for idx in indices:
-                if 1 <= idx <= len(similar_options):
-                    if similar_options[idx-1] not in corrected:
-                        corrected.append(similar_options[idx-1])
-            return corrected
-        if token == 'fever':
-            fever_options = [s for s in self.feature_names if 'fever' in s]
-            print("You entered 'fever'. Please specify the type(s) of fever:")
-            for i, opt in enumerate(fever_options):
-                print(f"  {i+1}) {opt}")
-            print(f"  0) None of these / skip")
-            selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
-            indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-            for idx in indices:
-                if 1 <= idx <= len(fever_options):
-                    if fever_options[idx-1] not in corrected:
-                        corrected.append(fever_options[idx-1])
-            return corrected
-        if token in self.feature_names:
-            corrected.append(token)
-            return corrected
-        matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
-        if matches:
-            best = matches[0]
-            ratio = SequenceMatcher(None, token, best).ratio()
-            if ratio > 0.8:
-                print(f"Interpreting '{token}' as '{best}'.")
-                corrected.append(best)
-                return corrected
-            elif ratio > 0.6:
-                print(f"Unrecognized symptom: '{token}'. Did you mean:")
-                for i, match in enumerate(matches):
-                    print(f"  {i+1}) {match}")
-                print(f"  0) None of these / skip")
-                while True:
-                    choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
-                    if choice.isdigit():
-                        idx = int(choice)
-                        if idx == 0:
-                            print(f"Skipping '{token}'.")
-                            break
-                        elif 1 <= idx <= len(matches):
-                            if matches[idx-1] not in corrected:
-                                corrected.append(matches[idx-1])
-                            break
-                    print("Invalid choice. Please try again.")
-                return corrected
-        print(f"No good match found for '{token}'. Skipping.")
-        return corrected
-
     def _build_medical_rules(self):
         """Build medical validation rules"""
         return {
@@ -328,8 +266,56 @@ class ChatbotInterface:
                     print(f"Please enter one of: {', '.join(valid_options)}")
                     continue
             elif symptom_mode:
-                # For symptom mode, just return the raw input and let handle_single_symptom_input process it
-                return user_input
+                # Generalized special handling for generic terms
+                similar_options = [s for s in self.feature_names if user_input in s]
+                if len(similar_options) > 3:
+                    print(f"You entered '{user_input}'. Please specify the type(s):")
+                    for i, opt in enumerate(similar_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(similar_options):
+                            if similar_options[idx-1] not in corrected:
+                                corrected.append(similar_options[idx-1])
+                    continue
+                if user_input == 'fever':
+                    fever_options = [s for s in self.feature_names if 'fever' in s]
+                    print("You entered 'fever'. Please specify the type(s) of fever:")
+                    for i, opt in enumerate(fever_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(fever_options):
+                            if fever_options[idx-1] not in corrected:
+                                corrected.append(fever_options[idx-1])
+                    continue
+                # Fuzzy match for symptoms
+                if user_input in self.feature_names:
+                    return user_input
+                closest = self.get_closest_symptom(user_input)
+                if closest:
+                    # Calculate similarity ratio
+                    ratio = SequenceMatcher(None, user_input, closest).ratio()
+                    if ratio > 0.8:
+                        print(f"Interpreting '{user_input}' as '{closest}'.")
+                        return closest
+                    elif ratio > 0.6:
+                        confirm = input(f"Did you mean '{closest}'? (y/n): ").strip().lower()
+                        if confirm == 'y':
+                            return closest
+                        else:
+                            print("Please try again.")
+                            continue
+                    else:
+                        print("Symptom not recognized. Please try again.")
+                        continue
+                else:
+                    print("Symptom not recognized. Please try again.")
+                    continue
             else:
                 return user_input
 
@@ -626,8 +612,68 @@ class ChatbotInterface:
                         cleaned_tokens.append(t)
                 corrected = []
                 for token in cleaned_tokens:
-                    corrected.extend(self.handle_single_symptom_input(token))
-                if not corrected:
+                    # Generalized special handling for generic terms
+                    similar_options = [s for s in self.feature_names if token in s]
+                    if len(similar_options) > 3:
+                        print(f"You entered '{token}'. Please specify the type(s):")
+                        for i, opt in enumerate(similar_options):
+                            print(f"  {i+1}) {opt}")
+                        print(f"  0) None of these / skip")
+                        selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                        indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                        for idx in indices:
+                            if 1 <= idx <= len(similar_options):
+                                if similar_options[idx-1] not in corrected:
+                                    corrected.append(similar_options[idx-1])
+                    continue
+                    if token == 'fever':
+                        fever_options = [s for s in self.feature_names if 'fever' in s]
+                        print("You entered 'fever'. Please specify the type(s) of fever:")
+                        for i, opt in enumerate(fever_options):
+                            print(f"  {i+1}) {opt}")
+                        print(f"  0) None of these / skip")
+                        selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
+                        indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                        for idx in indices:
+                            if 1 <= idx <= len(fever_options):
+                                if fever_options[idx-1] not in corrected:
+                                    corrected.append(fever_options[idx-1])
+                    continue
+                    if token in self.feature_names:
+                        if token not in corrected:
+                            corrected.append(token)
+                        else:
+                            matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
+                            if matches:
+                                best = matches[0]
+                                ratio = SequenceMatcher(None, token, best).ratio()
+                                if ratio > 0.8:
+                                    print(f"Interpreting '{token}' as '{best}'.")
+                                    if best not in corrected:
+                                        corrected.append(best)
+                                elif ratio > 0.6:
+                                    print(f"Unrecognized symptom: '{token}'. Did you mean:")
+                                    for i, match in enumerate(matches):
+                                        print(f"  {i+1}) {match}")
+                                    print(f"  0) None of these / skip")
+                                    while True:
+                                        choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
+                                        if choice.isdigit():
+                                            idx = int(choice)
+                                            if idx == 0:
+                                                print(f"Skipping '{token}'.")
+                                                break
+                                            elif 1 <= idx <= len(matches):
+                                                if matches[idx-1] not in corrected:
+                                                    corrected.append(matches[idx-1])
+                                                break
+                                        print("Invalid choice. Please try again.")
+                            else:
+                                print(f"No good match found for '{token}'. Skipping.")
+                    else:
+                        print(f"No close match found for '{token}'. Skipping.")
+                extracted = corrected
+                if not extracted:
                     print("No symptoms extracted. Switching to traditional mode.")
                     self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
                     print("-" * 130)
@@ -650,11 +696,11 @@ class ChatbotInterface:
                         print('Please enter y or n.')
                         continue
                 # Ask about relevant symptoms for each confirmed symptom (no duplicates)
-                all_symptoms = set(corrected)
+                all_symptoms = set(extracted)
                 related_answers = []
                 i = 0
-                while i < len(corrected):
-                    symptom = corrected[i]
+                while i < len(extracted):
+                    symptom = extracted[i]
                     relevant = self.get_medical_relevant_symptoms(symptom)
                     if relevant:
                         print(f"Are you experiencing any of these symptoms related to {symptom}?")
@@ -779,12 +825,38 @@ class ChatbotInterface:
                             continue
                         
                         # --- Use the exact same logic as free text mode ---
-                        corrected = self.handle_single_symptom_input(symptom_input)
-                        if len(corrected) > 0:
-                            confirmed_symptoms.extend(corrected)
+                        if symptom_input in self.feature_names:
+                            confirmed_symptoms.append(symptom_input)
                             break
                         else:
-                            print("Symptom not recognized. Please try again.")
+                            matches = difflib.get_close_matches(symptom_input, self.feature_names, n=3, cutoff=0.0)
+                            if matches:
+                                best = matches[0]
+                                ratio = SequenceMatcher(None, symptom_input, best).ratio()
+                                if ratio > 0.8:
+                                    print(f"Interpreting '{symptom_input}' as '{best}'.")
+                                    confirmed_symptoms.append(best)
+                                    break
+                                elif ratio > 0.6:
+                                    print(f"Unrecognized symptom: '{symptom_input}'. Did you mean:")
+                                    for i, match in enumerate(matches):
+                                        print(f"  {i+1}) {match}")
+                                    print(f"  0) None of these / skip")
+                                    while True:
+                                        choice = input(f"Select the correct symptom for '{symptom_input}' (1-{len(matches)} or 0 to skip): ").strip()
+                                        if choice.isdigit():
+                                            idx = int(choice)
+                                            if idx == 0:
+                                                print(f"Skipping '{symptom_input}'.")
+                                                break
+                                            elif 1 <= idx <= len(matches):
+                                                confirmed_symptoms.append(matches[idx-1])
+                                                break
+                                        print("Invalid choice. Please try again.")
+                                    if confirmed_symptoms:
+                                        break
+                            else:
+                                print("Symptom not recognized. Please try again.")
 
                     # Step 1.5: Symptom review/edit
                     while True:
@@ -1219,8 +1291,68 @@ class ChatbotInterface:
                     cleaned_tokens.append(t)
             corrected = []
             for token in cleaned_tokens:
-                corrected.extend(self.handle_single_symptom_input(token))
-            if not corrected:
+                # Generalized special handling for generic terms
+                similar_options = [s for s in self.feature_names if token in s]
+                if len(similar_options) > 3:
+                    print(f"You entered '{token}'. Please specify the type(s):")
+                    for i, opt in enumerate(similar_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(similar_options):
+                            if similar_options[idx-1] not in corrected:
+                                corrected.append(similar_options[idx-1])
+                    continue
+                if token == 'fever':
+                    fever_options = [s for s in self.feature_names if 'fever' in s]
+                    print("You entered 'fever'. Please specify the type(s) of fever:")
+                    for i, opt in enumerate(fever_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(fever_options):
+                            if fever_options[idx-1] not in corrected:
+                                corrected.append(fever_options[idx-1])
+                    continue
+                if token in self.feature_names:
+                    if token not in corrected:
+                        corrected.append(token)
+                    else:
+                        matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
+                        if matches:
+                            best = matches[0]
+                            ratio = SequenceMatcher(None, token, best).ratio()
+                            if ratio > 0.8:
+                                print(f"Interpreting '{token}' as '{best}'.")
+                                if best not in corrected:
+                                    corrected.append(best)
+                            elif ratio > 0.6:
+                                print(f"Unrecognized symptom: '{token}'. Did you mean:")
+                                for i, match in enumerate(matches):
+                                    print(f"  {i+1}) {match}")
+                                print(f"  0) None of these / skip")
+                                while True:
+                                    choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
+                                    if choice.isdigit():
+                                        idx = int(choice)
+                                        if idx == 0:
+                                            print(f"Skipping '{token}'.")
+                                            break
+                                        elif 1 <= idx <= len(matches):
+                                            if matches[idx-1] not in corrected:
+                                                corrected.append(matches[idx-1])
+                                            break
+                                    print("Invalid choice. Please try again.")
+                        else:
+                            print(f"No good match found for '{token}'. Skipping.")
+                    else:
+                        print(f"No close match found for '{token}'. Skipping.")
+            extracted = corrected
+            if not extracted:
                 print("No symptoms extracted. Switching to traditional mode.")
                 self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
                 print("-" * 130)
@@ -1243,11 +1375,11 @@ class ChatbotInterface:
                     print('Please enter y or n.')
                     continue
             # Ask about relevant symptoms for each confirmed symptom (no duplicates)
-            all_symptoms = set(corrected)
+            all_symptoms = set(extracted)
             related_answers = []
             i = 0
-            while i < len(corrected):
-                symptom = corrected[i]
+            while i < len(extracted):
+                symptom = extracted[i]
                 relevant = self.get_medical_relevant_symptoms(symptom)
                 if relevant:
                     print(f"Are you experiencing any of these symptoms related to {symptom}?")

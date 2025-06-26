@@ -11,10 +11,10 @@
 
 ## Performance Metrics
 - **Test Accuracy**: 0.9925 (99.25%)
-- **CV Accuracy**: 0.9932 (+/- 0.0047)
+- **CV Accuracy**: 0.9925 (+/- 0.0063)
 
 ## Confidence Analysis
-- **Mean Confidence**: 0.9643
+- **Mean Confidence**: 0.9644
 - **High Confidence (≥70%)**: 395/402 (98.3%)
 - **Medium Confidence (50-70%)**: 5/402 (1.2%)
 - **Low Confidence (<50%)**: 2/402 (0.5%)

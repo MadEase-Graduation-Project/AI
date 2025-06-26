@@ -7,6 +7,7 @@ __pycache__/
 
 # Model files
 *.joblib
+models/
 
 # Data files (optional, comment out if you want to keep data in repo)
 #*.csv
