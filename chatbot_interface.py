@@ -69,7 +69,7 @@ class ChatbotInterface:
         corrected = []
         token = symptom_input.strip().lower().replace(' ', '_')
         similar_options = [s for s in self.feature_names if token in s]
-        if len(similar_options) > 3:
+        if len(similar_options) >= 2:
             print(f"You entered '{token}'. Please specify the type(s):")
             for i, opt in enumerate(similar_options):
                 print(f"  {i+1}) {opt}")
@@ -81,19 +81,6 @@ class ChatbotInterface:
                     if similar_options[idx-1] not in corrected:
                         corrected.append(similar_options[idx-1])
             return corrected
-        if token == 'fever':
-            fever_options = [s for s in self.feature_names if 'fever' in s]
-            print("You entered 'fever'. Please specify the type(s) of fever:")
-            for i, opt in enumerate(fever_options):
-                print(f"  {i+1}) {opt}")
-            print(f"  0) None of these / skip")
-            selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,2): ").strip()
-            indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-            for idx in indices:
-                if 1 <= idx <= len(fever_options):
-                    if fever_options[idx-1] not in corrected:
-                        corrected.append(fever_options[idx-1])
-            return corrected
         if token in self.feature_names:
             corrected.append(token)
             return corrected
@@ -103,8 +90,28 @@ class ChatbotInterface:
             ratio = SequenceMatcher(None, token, best).ratio()
             if ratio > 0.8:
                 print(f"Interpreting '{token}' as '{best}'.")
-                corrected.append(best)
-                return corrected
+                # After fuzzy correction, check if the corrected token is a generic term
+                corrected_token = best
+                similar_options = [s for s in self.feature_names if corrected_token in s]
+                if len(similar_options) >= 2:
+                    print(f"Please specify the type(s) of '{corrected_token}':")
+                    for i, opt in enumerate(similar_options):
+                        print(f"  {i+1}) {opt}")
+                    print(f"  0) None of these / skip")
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                    indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                    for idx in indices:
+                        if 1 <= idx <= len(similar_options):
+                            if similar_options[idx-1] not in corrected:
+                                corrected.append(similar_options[idx-1])
+                    return corrected
+                elif corrected_token in self.feature_names:
+                    corrected.append(corrected_token)
+                    return corrected
+                else:
+                    # Fallback: just return the best match even if not in feature_names
+                    corrected.append(best)
+                    return corrected
             elif ratio > 0.6:
                 print(f"Unrecognized symptom: '{token}'. Did you mean:")
                 for i, match in enumerate(matches):
@@ -315,17 +322,33 @@ class ChatbotInterface:
                 return 'undo'
             if user_input == 'main':
                 return 'main_menu'
+            # Normalize yes/no/y/n
+            if valid_options:
+                yn_map = {'y': 'yes', 'n': 'no', 'yes': 'yes', 'no': 'no'}
+                if set(valid_options) == set(['yes', 'no']) or set(valid_options) == set(['yes', 'no', 'back']):
+                    if user_input in yn_map:
+                        mapped = yn_map[user_input]
+                        if mapped in valid_options:
+                            return mapped
+                    if 'back' in valid_options and user_input == 'back':
+                        return 'back'
+                    print("Please enter 'yes'/'y' or 'no'/'n'" + (" or 'back'" if 'back' in valid_options else "") + ".")
+                    continue
+                if set(valid_options) == set(['y', 'n']):
+                    if user_input in yn_map:
+                        mapped = yn_map[user_input]
+                        return 'y' if mapped == 'yes' else 'n'
+                    print("Please enter 'yes'/'y' or 'no'/'n'.")
+                    continue
+                if user_input in valid_options:
+                    return user_input
+                print(f"Please enter one of: {', '.join(valid_options)}")
+                continue
             if input_type == int:
                 try:
                     return int(user_input)
                 except ValueError:
                     print("Please enter a valid number.")
-                    continue
-            elif valid_options:
-                if user_input in valid_options:
-                    return user_input
-                else:
-                    print(f"Please enter one of: {', '.join(valid_options)}")
                     continue
             elif symptom_mode:
                 # For symptom mode, just return the raw input and let handle_single_symptom_input process it
@@ -565,24 +588,24 @@ class ChatbotInterface:
                                     print("---------------------------")
                             else:
                                 print(f"No doctors found for specialty '{specialty}' in any location.")
-                        again = self.get_valid_input("Do you want to search for another doctor? (y/n): ", valid_options=["y", "n"])
+                        again = self.get_valid_input("Do you want to search for another doctor? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                         if again == 'undo':
                             print("Undo: Returning to location input.")
                             self.user_location = self.get_location()
                             break
-                        if again == "y":
+                        if again in ["yes", "y"]:
                             continue
                         else:
                             print("Returning to main menu...")
                             break
                     continue
                 elif main_choice == "3":
-                    confirm_exit = self.get_valid_input("Are you sure you want to exit? (y/n): ", valid_options=["y", "n"])
+                    confirm_exit = self.get_valid_input("Are you sure you want to exit? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                     if confirm_exit == 'undo':
                         print("Undo: Returning to location input.")
                         self.user_location = self.get_location()
                         continue
-                    if confirm_exit == "y":
+                    if confirm_exit in ["yes", "y"]:
                         print("\nThank you for using the Healthcare Chatbot! Have a great day! 🙏")
                         return
                     else:
@@ -639,15 +662,15 @@ class ChatbotInterface:
                     num_days = self.get_valid_input('Okay. From how many days? ', input_type=int)
                     if num_days == 'main_menu':
                         return
-                    print(f'You entered {num_days} days. Is this correct? (y/n)')
+                    print(f'You entered {num_days} days. Is this correct? (yes/y or no/n)')
                     confirm_days = input('-> ').strip().lower()
-                    if confirm_days == 'y':
+                    if confirm_days in ["yes", "y"]:
                         break
-                    elif confirm_days == 'n':
+                    elif confirm_days in ["no", "n"]:
                         print('Please re-enter the number of days.')
                         continue
                     else:
-                        print('Please enter y or n.')
+                        print('Please enter yes/y or no/n.')
                         continue
                 # Ask about relevant symptoms for each confirmed symptom (no duplicates)
                 all_symptoms = set(corrected)
@@ -662,7 +685,7 @@ class ChatbotInterface:
                         j = 0
                         while j < len(rels):
                             rel = rels[j]
-                            response = self.get_valid_input(f"   {rel}? (yes/no/back): ", valid_options=["yes", "no", "back"], symptom_mode=True)
+                            response = self.get_valid_input(f"   {rel}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
                             if response == 'main_menu':
                                 return
                             if response == "back":
@@ -672,15 +695,15 @@ class ChatbotInterface:
                                 else:
                                     print('Already at the first related symptom.')
                                     continue
-                            elif response == "yes":
+                            elif response in ["yes", "y"]:
                                 all_symptoms.add(rel)
                                 related_answers.append((rel, "yes"))
                                 j += 1
-                            elif response == "no":
+                            elif response in ["no", "n"]:
                                 related_answers.append((rel, "no"))
                                 j += 1
                             else:
-                                print('Please enter yes, no, or back.')
+                                print('Please enter yes/y, no/n, or back.')
                                 continue
                     i += 1
                 # Diagnose
@@ -706,14 +729,17 @@ class ChatbotInterface:
                     print("Let me ask about some common symptoms:")
                     for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
                         if s not in all_symptoms:
-                            yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/no): ", valid_options=["yes", "no"])
-                            if yn == "yes":
+                            yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                            if yn in ["yes", "y"]:
                                 all_symptoms.add(s)
                     print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
                     print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
                     extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
-                    if extra and extra in self.feature_names:
-                        all_symptoms.add(extra)
+                    if extra:
+                        corrected_extra = self.handle_single_symptom_input(extra)
+                        for ce in corrected_extra:
+                            if ce not in all_symptoms:
+                                all_symptoms.add(ce)
                     # Re-run prediction with updated symptoms
                     predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
                     conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
@@ -789,48 +815,20 @@ class ChatbotInterface:
                     # Step 1.5: Symptom review/edit
                     while True:
                         print(f"\nHere are the symptoms I have: {', '.join(confirmed_symptoms)}")
-                        confirm = input("Would you like to add, remove, or edit any symptoms? (y/n)\n-> ").strip().lower()
-                        if confirm == "y":
+                        confirm = input("Would you like to add, remove, or edit any symptoms? (yes/y or no/n)\n-> ").strip().lower()
+                        if confirm == "yes" or confirm == "y":
                             print("Enter the full, final list of symptoms separated by commas (or type 'undo' to go back and re-enter symptoms):")
                             final = input("-> ").strip().lower()
                             if final == 'undo':
                                 print("Undo: Returning to symptom entry step.")
                                 restart_symptom_entry = True
                                 break
-                            raw_symptoms = [s.strip().replace(' ', '_') for s in final.split(',') if s.strip()]
+                            raw_symptoms = [s.strip() for s in final.split(',') if s.strip()]
                             validated = []
                             for token in raw_symptoms:
-                                if token in self.feature_names:
-                                    validated.append(token)
-                                else:
-                                    matches = difflib.get_close_matches(token, self.feature_names, n=3, cutoff=0.0)
-                                    if matches:
-                                        best = matches[0]
-                                        ratio = SequenceMatcher(None, token, best).ratio()
-                                        if ratio > 0.8:
-                                            print(f"Interpreting '{token}' as '{best}'.")
-                                            validated.append(best)
-                                        elif ratio > 0.6:
-                                            print(f"Unrecognized symptom: '{token}'. Did you mean:")
-                                            for i, match in enumerate(matches):
-                                                print(f"  {i+1}) {match}")
-                                            print(f"  0) None of these / skip")
-                                            while True:
-                                                choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
-                                                if choice.isdigit():
-                                                    idx = int(choice)
-                                                    if idx == 0:
-                                                        print(f"Skipping '{token}'.")
-                                                        break
-                                                    elif 1 <= idx <= len(matches):
-                                                        if matches[idx-1] not in validated:
-                                                            validated.append(matches[idx-1])
-                                                        break
-                                            print("Invalid choice. Please try again.")
-                                        else:
-                                            print(f"No good match found for '{token}'. Skipping.")
-                                    else:
-                                        print(f"No close match found for '{token}'. Skipping.")
+                                # Use the centralized symptom input handling
+                                corrected_tokens = self.handle_single_symptom_input(token)
+                                validated.extend(corrected_tokens)
                             if validated:
                                 confirmed_symptoms = validated
                             else:
@@ -844,15 +842,15 @@ class ChatbotInterface:
                     # Step 2: Days input (with confirmation)
                     while True:
                         num_days = self.get_valid_input("Okay. For how many days have you had these symptoms? : ", input_type=int)
-                        print(f'You entered {num_days} days. Is this correct? (y/n)')
+                        print(f'You entered {num_days} days. Is this correct? (yes/y or no/n)')
                         confirm_days = input('-> ').strip().lower()
-                        if confirm_days == 'y':
+                        if confirm_days in ["yes", "y"]:
                             break
-                        elif confirm_days == 'n':
+                        elif confirm_days in ["no", "n"]:
                             print('Please re-enter the number of days.')
                             continue
                         else:
-                            print('Please enter y or n.')
+                            print('Please enter yes/y or no/n.')
                             continue
                     if num_days == 'undo':
                         continue  # Go back to symptom review
@@ -868,7 +866,7 @@ class ChatbotInterface:
                         while j < len(rels):
                             symptom = rels[j]
                             self.text_to_speech(f"{symptom}, are you experiencing it?")
-                            response = self.get_valid_input(f"   {symptom}? (yes/no/back): ", valid_options=["yes", "no", "back"], symptom_mode=True)
+                            response = self.get_valid_input(f"   {symptom}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
                             if response == 'back':
                                 if j > 0:
                                     j -= 1
@@ -876,13 +874,13 @@ class ChatbotInterface:
                                 else:
                                     print('Already at the first related symptom.')
                                     continue
-                            elif response == "yes":
+                            elif response in ["yes", "y"]:
                                 confirmed_symptoms.append(symptom)
                                 j += 1
-                            elif response == "no":
+                            elif response in ["no", "n"]:
                                 j += 1
                             else:
-                                print('Please enter yes, no, or back.')
+                                print('Please enter yes/y, no/n, or back.')
                                 continue
 
                     # Step 4: Make prediction with medical validation
@@ -908,14 +906,17 @@ class ChatbotInterface:
                             print("Let me ask about some common symptoms:")
                             for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
                                 if s not in confirmed_symptoms:
-                                    yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/no): ", valid_options=["yes", "no"])
-                                    if yn == "yes":
+                                    yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                                    if yn in ["yes", "y"]:
                                         confirmed_symptoms.append(s)
                             print(f"\n\U0001F4CA Current analysis: {len(confirmed_symptoms)} symptoms, confidence: {conf_str}")
                             print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
                             extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
-                            if extra and extra in self.feature_names and extra not in confirmed_symptoms:
-                                confirmed_symptoms.append(extra)
+                            if extra:
+                                corrected_extra = self.handle_single_symptom_input(extra)
+                                for ce in corrected_extra:
+                                    if ce not in confirmed_symptoms:
+                                        confirmed_symptoms.append(ce)
                             continue  # Re-run prediction with updated symptoms
                         if predicted_disease:
                             print(f"\n\U0001FA7A You may have: {predicted_disease}")
@@ -1232,15 +1233,15 @@ class ChatbotInterface:
                 num_days = self.get_valid_input('Okay. From how many days? ', input_type=int)
                 if num_days == 'main_menu':
                     return
-                print(f'You entered {num_days} days. Is this correct? (y/n)')
+                print(f'You entered {num_days} days. Is this correct? (yes/y or no/n)')
                 confirm_days = input('-> ').strip().lower()
-                if confirm_days == 'y':
+                if confirm_days in ["yes", "y"]:
                     break
-                elif confirm_days == 'n':
+                elif confirm_days in ["no", "n"]:
                     print('Please re-enter the number of days.')
                     continue
                 else:
-                    print('Please enter y or n.')
+                    print('Please enter yes/y or no/n.')
                     continue
             # Ask about relevant symptoms for each confirmed symptom (no duplicates)
             all_symptoms = set(corrected)
@@ -1255,7 +1256,7 @@ class ChatbotInterface:
                     j = 0
                     while j < len(rels):
                         rel = rels[j]
-                        response = self.get_valid_input(f"   {rel}? (yes/no/back): ", valid_options=["yes", "no", "back"], symptom_mode=True)
+                        response = self.get_valid_input(f"   {rel}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
                         if response == 'main_menu':
                             return
                         if response == "back":
@@ -1265,15 +1266,15 @@ class ChatbotInterface:
                             else:
                                 print('Already at the first related symptom.')
                                 continue
-                        elif response == "yes":
+                        elif response in ["yes", "y"]:
                             all_symptoms.add(rel)
                             related_answers.append((rel, "yes"))
                             j += 1
-                        elif response == "no":
+                        elif response in ["no", "n"]:
                             related_answers.append((rel, "no"))
                             j += 1
                         else:
-                            print('Please enter yes, no, or back.')
+                            print('Please enter yes/y, no/n, or back.')
                             continue
                 i += 1
             # Diagnose
@@ -1299,14 +1300,17 @@ class ChatbotInterface:
                 print("Let me ask about some common symptoms:")
                 for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
                     if s not in all_symptoms:
-                        yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/no): ", valid_options=["yes", "no"])
-                        if yn == "yes":
+                        yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                        if yn in ["yes", "y"]:
                             all_symptoms.add(s)
                 print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
                 print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
                 extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
-                if extra and extra in self.feature_names:
-                    all_symptoms.add(extra)
+                if extra:
+                    corrected_extra = self.handle_single_symptom_input(extra)
+                    for ce in corrected_extra:
+                        if ce not in all_symptoms:
+                            all_symptoms.add(ce)
                 # Re-run prediction with updated symptoms
                 predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
                 conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"

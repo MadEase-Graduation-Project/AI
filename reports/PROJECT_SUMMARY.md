@@ -37,6 +37,7 @@ This project implements a medical chatbot that predicts diseases based on patien
 - **Rule-Based Post-Processing**: If all symptoms are mild/common and the top prediction is severe with low confidence, the bot suggests a mild disease instead.
 - **User-Friendly Interface**: Designed for clarity, error handling, and easy interaction. All user input is robustly handled.
 - **Team Readiness**: Modular, well-documented codebase, with clear onboarding and configuration instructions.
+- **Input Normalization & Prompt Consistency**: All yes/no prompts now accept both 'yes/y' and 'no/n' in all chatbot flows and modes, ensuring a consistent and user-friendly experience.
 
 ## 📊 **Performance Results**
 

@@ -1,43 +1,30 @@
-"""
-Configuration file for Healthcare Chatbot
-This file contains all file paths and configuration settings
-"""
-
+# config.py
 import os
-from pathlib import Path
 
-# Get the directory where this config.py file is located
-BASE_DIR = Path(__file__).parent
+# Data paths
+TRAINING_DATA_PATH = "Data/Training.csv"
+TRAINING_AUGMENTED_DATA_PATH = "Data/Training_augmented.csv"
+TRAINING_AI_AUGMENTED_DATA_PATH = "Data/Training_ai_augmented.csv"  # Updated path
+TESTING_DATA_PATH = "Data/Testing.csv"  # Added missing constant
 
-# Data directory path
-DATA_DIR = BASE_DIR / "Data"
+# Model paths
+MODELS_DIR = "models"
+REPORTS_DIR = "reports"
 
-# Model and report directories
-MODELS_DIR = BASE_DIR / "models"
-REPORTS_DIR = BASE_DIR / "reports"
-
-# Dataset file paths
-TRAINING_DATA_PATH = DATA_DIR / "Training.csv"
-TRAINING_AUGMENTED_DATA_PATH = DATA_DIR / "Training_augmented.csv"
-TRAINING_AI_AUGMENTED_DATA_PATH = DATA_DIR / "Training_ai_augmented.csv"
-TESTING_DATA_PATH = DATA_DIR / "Testing.csv"
-DOCTORS_DATA_PATH = DATA_DIR / "doctors_dataset.csv"
-SYMPTOM_SEVERITY_PATH = DATA_DIR / "Symptom_severity.csv"
-SYMPTOM_DESCRIPTION_PATH = DATA_DIR / "symptom_Description.csv"
-SYMPTOM_PRECAUTION_PATH = DATA_DIR / "symptom_precaution.csv"
-
-# Model parameters
-RANDOM_STATE = 42
-TEST_SIZE = 0.2
-CV_FOLDS = 3
+# Symptom severity and description paths
+SYMPTOM_SEVERITY_PATH = "Data/Symptom_severity.csv"
+SYMPTOM_DESCRIPTION_PATH = "Data/symptom_Description.csv"
+SYMPTOM_PRECAUTION_PATH = "Data/symptom_precaution.csv"
 
 # Text-to-Speech settings
 TTS_RATE = 150
 TTS_VOLUME = 0.9
 
-# Chatbot settings
+# Search settings
 MAX_SYMPTOM_SEARCH_RESULTS = 10
-SEVERITY_THRESHOLD = 13
 
-# API configuration
-API_BASE_URL = "https://api.freeapi.app/api/v1/public/instances?search="
+# Test size for data splitting
+TEST_SIZE = 0.2  # Added missing constant
+
+# Random state for reproducibility
+RANDOM_STATE = 42

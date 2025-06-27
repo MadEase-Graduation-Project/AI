@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from data_preprocessing_fixed import DataPreprocessorFixed
 from train_with_ai_augmented import EnhancedAITrainingPipeline
-from chatbot_interface import ChatbotInterface
+from chatbot_interface import haChatbotInterface
 from config import (
     TRAINING_DATA_PATH, 
     TRAINING_AI_AUGMENTED_DATA_PATH,
