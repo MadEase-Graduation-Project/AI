@@ -547,9 +547,10 @@ class ChatbotInterface:
                 print("\nWhat would you like to do?")
                 print("1) Diagnosis (disease prediction)")
                 print("2) Find a doctor")
-                print("3) I am done / Exit")
+                print("3) Find a hospital")
+                print("4) I am done / Exit")
                 print("(Type 'undo' to go back and enter your location.)")
-                main_choice = self.get_valid_input("Enter 1, 2, or 3: ", valid_options=["1", "2", "3", "undo"])
+                main_choice = self.get_valid_input("Enter 1, 2, 3, or 4: ", valid_options=["1", "2", "3", "4", "undo"])
                 if main_choice == 'undo':
                     print("Undo: Returning to location input.")
                     self.user_location = self.get_location()
@@ -600,6 +601,49 @@ class ChatbotInterface:
                             break
                     continue
                 elif main_choice == "3":
+                    while True:
+                        hosp_location = input("Enter the city or country you are looking for hospitals in: ").strip()
+                        if hosp_location.lower() == 'undo':
+                            print("Undo: Returning to location input.")
+                            self.user_location = self.get_location()
+                            break
+                        filtered_hospitals, all_hospitals = self.get_hospitals_by_location(hosp_location)
+                        if filtered_hospitals:
+                            print(f"\nHospitals in {hosp_location}:")
+                            for hosp in filtered_hospitals:
+                                print(f"- Name: {hosp.get('name', 'Unknown')}")
+                                print(f"  Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
+                                print(f"  Phone: {hosp.get('phone', 'N/A')}")
+                                print(f"  Email: {hosp.get('email', 'N/A')}")
+                                print(f"  Address: {hosp.get('address', 'N/A')}")
+                                print(f"  Website: {hosp.get('website', 'N/A')}")
+                                print("---------------------------")
+                        else:
+                            print(f"No hospitals found in {hosp_location}.")
+                            if all_hospitals:
+                                print(f"\nAvailable hospitals in other locations:")
+                                for hosp in all_hospitals:
+                                    print(f"- Name: {hosp.get('name', 'Unknown')}")
+                                    print(f"  Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
+                                    print(f"  Phone: {hosp.get('phone', 'N/A')}")
+                                    print(f"  Email: {hosp.get('email', 'N/A')}")
+                                    print(f"  Address: {hosp.get('address', 'N/A')}")
+                                    print(f"  Website: {hosp.get('website', 'N/A')}")
+                                    print("---------------------------")
+                            else:
+                                print(f"No hospitals found in any location.")
+                        again = self.get_valid_input("Do you want to search for another hospital? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                        if again == 'undo':
+                            print("Undo: Returning to location input.")
+                            self.user_location = self.get_location()
+                            break
+                        if again in ["yes", "y"]:
+                            continue
+                        else:
+                            print("Returning to main menu...")
+                            break
+                    continue
+                elif main_choice == "4":
                     confirm_exit = self.get_valid_input("Are you sure you want to exit? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                     if confirm_exit == 'undo':
                         print("Undo: Returning to location input.")
@@ -1303,50 +1347,75 @@ class ChatbotInterface:
                         yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                         if yn in ["yes", "y"]:
                             all_symptoms.add(s)
-                print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
-                print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
-                extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
-                if extra:
-                    corrected_extra = self.handle_single_symptom_input(extra)
-                    for ce in corrected_extra:
-                        if ce not in all_symptoms:
-                            all_symptoms.add(ce)
-                # Re-run prediction with updated symptoms
-                predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
-                conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
-            if predicted_disease:
-                print(f"\n\U0001FA7A You may have: {predicted_disease}")
-                print(f"\U0001F52C Model confidence: {conf_str}")
-                if confidence is not None and confidence < 0.5:
-                    print("\U0001F534 Low confidence - please consult a healthcare professional immediately")
-            else:
-                print(f"\n\U0001F534 Unable to make a confident prediction. Please consult a healthcare professional.")
-            desc_to_show = None
-            if isinstance(description, list):
-                seen = set()
-                for desc in description:
-                    if desc and desc not in seen:
-                        desc_to_show = desc
-                        break
-            elif isinstance(description, str) and description.strip():
-                desc_to_show = description.strip()
-            if desc_to_show:
-                print(f"\n\U0001F4DD Description: {desc_to_show}")
-            else:
-                print("\n\U0001F4DD Description: No description available for this condition.")
-            if precautions:
-                print("\n\U0001F4A1 Take the following precautions:")
-                for i, precaution in enumerate(precautions):
-                    if precaution.strip():
-                        print(f"   {i+1}) {precaution}")
-            # Doctor recommendations (always show in both modes)
-            self._provide_doctor_recommendations(predicted_disease)
+                    print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
+                    print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
+                    extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
+                    if extra:
+                        corrected_extra = self.handle_single_symptom_input(extra)
+                        for ce in corrected_extra:
+                            if ce not in all_symptoms:
+                                all_symptoms.add(ce)
+                    # Re-run prediction with updated symptoms
+                    predicted_disease, confidence, top_3_diseases, top_3_confidences, severity_score, severity_level, high_severity_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms))
+                    conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+                if predicted_disease:
+                    print(f"\n\U0001FA7A You may have: {predicted_disease}")
+                    print(f"\U0001F52C Model confidence: {conf_str}")
+                    if confidence is not None and confidence < 0.5:
+                        print("\U0001F534 Low confidence - please consult a healthcare professional immediately")
+                else:
+                    print(f"\n\U0001F534 Unable to make a confident prediction. Please consult a healthcare professional.")
+                desc_to_show = None
+                if isinstance(description, list):
+                    seen = set()
+                    for desc in description:
+                        if desc and desc not in seen:
+                            desc_to_show = desc
+                            break
+                elif isinstance(description, str) and description.strip():
+                    desc_to_show = description.strip()
+                if desc_to_show:
+                    print(f"\n\U0001F4DD Description: {desc_to_show}")
+                else:
+                    print("\n\U0001F4DD Description: No description available for this condition.")
+                if precautions:
+                    print("\n\U0001F4A1 Take the following precautions:")
+                    for i, precaution in enumerate(precautions):
+                        if precaution.strip():
+                            print(f"   {i+1}) {precaution}")
+                # Doctor recommendations (always show in both modes)
+                self._provide_doctor_recommendations(predicted_disease)
+                print("-" * 130)
+                print("Thank you for using Healthcare Chatbot! \U0001F64F")
+                print("\u26A0\uFE0F  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+                return  # Return to main menu after diagnosis
+            self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
             print("-" * 130)
-            print("Thank you for using Healthcare Chatbot! \U0001F64F")
-            print("\u26A0\uFE0F  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-            return  # Return to main menu after diagnosis
-        # Traditional mode: use tree_to_code for full interactive flow
-        self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
-        print("-" * 130)
+
+    def get_hospitals_by_location(self, location):
+        """Fetch hospitals from API by location (city or country)"""
+        url = "https://medeasy-backend-cgetg3arfvgfcjcq.westcentralus-01.azurewebsites.net/api/users/hospitals"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            hospitals = data.get('data', [])
+            location_lower = location.lower().strip()
+            filtered = []
+            for hosp in hospitals:
+                hosp_city = str(hosp.get('city', '')).lower().strip()
+                hosp_country = str(hosp.get('country', '')).lower().strip()
+                hosp_location = f"{hosp_city} {hosp_country}".strip()
+                if (location_lower in hosp_location or 
+                    hosp_city in location_lower or 
+                    hosp_country in location_lower):
+                    filtered.append(hosp)
+            return filtered, hospitals
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️  Could not fetch hospitals from API: {e}")
+            return [], []
+        except Exception as e:
+            print(f"⚠️  An error occurred while processing hospital data: {e}")
+            return [], []
 
 
