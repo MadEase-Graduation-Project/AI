@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "UW6NM2BQ",
+  "hospital_id": "unknown",
+  "patient_name": "ema",
+  "patient_phone": "012088888766",
+  "appointment_date": "2025-07-03",
+  "appointment_time": "12:00 PM",
+  "symptoms": null,
+  "booking_timestamp": "2025-06-29T01:34:16.742316"
+}

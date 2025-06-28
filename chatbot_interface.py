@@ -899,7 +899,7 @@ class ChatbotInterface:
             print("Please try again or consult a healthcare professional.")
 
     def _provide_doctor_recommendations(self, predicted_disease):
-        """Provide doctor recommendations based on predicted disease"""
+        """Provide doctor recommendations based on predicted disease - ENHANCED VERSION"""
         try:
             specialization = self.disease_to_specialty.get(predicted_disease, None)
             if not specialization:
@@ -926,38 +926,84 @@ class ChatbotInterface:
                         
             if filtered_doctors:
                 print(f"\n🩺 Recommended Doctors for {specialization} in {self.user_location}:")
-                for doc in filtered_doctors[:3]:  # Show top 3
-                    print(f"- Name: {doc.get('name')}")
-                    print(f"  Location: {doc.get('city')}, {doc.get('country')}")
-                    print(f"  Phone: {doc.get('phone', 'Not available')}")
-                    print(f"  Profile Link: {doc.get('ImgUrl', 'Not available')}")
-                    print("----------------------")
+                for doc in filtered_doctors:
+                    print(f"- Name: {doc.get('name', 'Unknown')}")
+                    print(f"  Specialty: {doc.get('specialization', 'N/A')}")
+                    print(f"  Location: {doc.get('city', 'N/A')}, {doc.get('country', 'N/A')}")
+                    print(f"  Phone: {doc.get('phone', 'N/A')}")
+                    rate = doc.get('rate')
+                    if rate is not None:
+                        print(f"  Rating: {rate}/5")
+                    else:
+                        print(f"  Rating: N/A")
+                    print(f"  Gender: {doc.get('gender', 'N/A')}")
+                    # Only show fields that actually exist and have values
+                    if doc.get('ImgUrl'):
+                        print(f"  Image: {doc.get('ImgUrl')}")
+                    if doc.get('Url'):
+                        print(f"  Profile: {doc.get('Url')}")
+                    print("---------------------------")
             elif doctors:
                 print(f"\n🩺 No doctors found in {self.user_location}. Showing top doctors for {specialization}:")
-                for doc in doctors[:3]:  # Show top 3
-                    print(f"- Name: {doc.get('name')}")
-                    print(f"  Location: {doc.get('city')}, {doc.get('country')}")
-                    print(f"  Phone: {doc.get('phone', 'Not available')}")
-                    print(f"  Profile Link: {doc.get('ImgUrl', 'Not available')}")
-                    print("----------------------")
+                for doc in doctors:
+                    print(f"- Name: {doc.get('name', 'Unknown')}")
+                    print(f"  Specialty: {doc.get('specialization', 'N/A')}")
+                    print(f"  Location: {doc.get('city', 'N/A')}, {doc.get('country', 'N/A')}")
+                    print(f"  Phone: {doc.get('phone', 'N/A')}")
+                    rate = doc.get('rate')
+                    if rate is not None:
+                        print(f"  Rating: {rate}/5")
+                    else:
+                        print(f"  Rating: N/A")
+                    print(f"  Gender: {doc.get('gender', 'N/A')}")
+                    # Only show fields that actually exist and have values
+                    if doc.get('ImgUrl'):
+                        print(f"  Image: {doc.get('ImgUrl')}")
+                    if doc.get('Url'):
+                        print(f"  Profile: {doc.get('Url')}")
+                    print("---------------------------")
                         
         except Exception as e:
             print(f"⚠️  Error getting doctor recommendations: {e}")
 
     def get_doctors_by_specialization(self, specialization):
-        """Fetch doctors from API by specialization (improved matching)"""
-        url = "https://medeasy-backend-cgetg3arfvgfcjcq.westcentralus-01.azurewebsites.net/api/users/doctors"
+        """Fetch doctors from API by specialization (improved matching) - ALL PAGES"""
+        base_url = "https://medeasy-backend-cgetg3arfvgfcjcq.westcentralus-01.azurewebsites.net/api/users/doctors"
+        all_doctors = []
+        
         try:
-            response = requests.get(url)
+            # Fetch first page to get total pages info
+            response = requests.get(base_url)
             response.raise_for_status()
             data = response.json()
-            doctors = data.get('data', [])
+            
+            total_pages = data.get('totalPages', 1)
+            current_page = data.get('currentPage', 1)
+            
+            print(f"📄 Fetching doctors from {total_pages} pages...")
+            
+            # Fetch all pages
+            for page in range(1, total_pages + 1):
+                page_url = f"{base_url}?page={page}"
+                print(f"  Loading page {page}/{total_pages}...")
+                
+                response = requests.get(page_url)
+                response.raise_for_status()
+                data = response.json()
+                doctors = data.get('data', [])
+                all_doctors.extend(doctors)
+                
+                # Small delay to be respectful to the API
+                import time
+                time.sleep(0.1)
+            
+            print(f"✅ Total doctors fetched: {len(all_doctors)}")
             
             # Improved specialization matching
             filtered = []
             specialization_lower = specialization.lower().strip()
             
-            for doc in doctors:
+            for doc in all_doctors:
                 doc_specialization = doc.get('specialization', '').lower().strip()
                 # Check for exact match or substring match
                 if (specialization_lower == doc_specialization or 
@@ -965,7 +1011,21 @@ class ChatbotInterface:
                     doc_specialization in specialization_lower):
                     filtered.append(doc)
             
+            # Sort doctors by rating (highest to lowest)
+            # Handle cases where rating might be None or 'N/A'
+            def get_rating_value(doc):
+                rating = doc.get('rate')
+                if rating is None or rating == 'N/A' or rating == '':
+                    return 0.0  # Put doctors without rating at the end
+                try:
+                    return float(rating)
+                except (ValueError, TypeError):
+                    return 0.0
+            
+            filtered.sort(key=get_rating_value, reverse=True)
+            
             return filtered
+            
         except requests.exceptions.RequestException as e:
             print(f"⚠️  Could not fetch doctors from API: {e}")
             return []
@@ -1365,16 +1425,42 @@ class ChatbotInterface:
             return  # Return to main menu after diagnosis
 
     def get_hospitals_by_location(self, location):
-        """Fetch hospitals from API by location (city or country)"""
-        url = "https://medeasy-backend-cgetg3arfvgfcjcq.westcentralus-01.azurewebsites.net/api/users/hospitals"
+        """Fetch hospitals from API by location (city or country) - ALL PAGES"""
+        base_url = "https://medeasy-backend-cgetg3arfvgfcjcq.westcentralus-01.azurewebsites.net/api/users/hospitals"
+        all_hospitals = []
+        
         try:
-            response = requests.get(url)
+            # Fetch first page to get total pages info
+            response = requests.get(base_url)
             response.raise_for_status()
             data = response.json()
-            hospitals = data.get('data', [])
+            
+            total_pages = data.get('totalPages', 1)
+            current_page = data.get('currentPage', 1)
+            
+            print(f"📄 Fetching hospitals from {total_pages} pages...")
+            
+            # Fetch all pages
+            for page in range(1, total_pages + 1):
+                page_url = f"{base_url}?page={page}"
+                print(f"  Loading page {page}/{total_pages}...")
+                
+                response = requests.get(page_url)
+                response.raise_for_status()
+                data = response.json()
+                hospitals = data.get('data', [])
+                all_hospitals.extend(hospitals)
+                
+                # Small delay to be respectful to the API
+                import time
+                time.sleep(0.1)
+            
+            print(f"✅ Total hospitals fetched: {len(all_hospitals)}")
+            
+            # Filter by location
             location_lower = location.lower().strip()
             filtered = []
-            for hosp in hospitals:
+            for hosp in all_hospitals:
                 hosp_city = str(hosp.get('city', '')).lower().strip()
                 hosp_country = str(hosp.get('country', '')).lower().strip()
                 hosp_location = f"{hosp_city} {hosp_country}".strip()
@@ -1382,7 +1468,22 @@ class ChatbotInterface:
                     hosp_city in location_lower or 
                     hosp_country in location_lower):
                     filtered.append(hosp)
-            return filtered, hospitals
+            
+            # Sort hospitals by rating (highest to lowest)
+            # Handle cases where rating might be None or 'N/A'
+            def get_rating_value(hosp):
+                rating = hosp.get('rate')
+                if rating is None or rating == 'N/A' or rating == '':
+                    return 0.0  # Put hospitals without rating at the end
+                try:
+                    return float(rating)
+                except (ValueError, TypeError):
+                    return 0.0
+            
+            filtered.sort(key=get_rating_value, reverse=True)
+            
+            return filtered, all_hospitals
+            
         except requests.exceptions.RequestException as e:
             print(f"⚠️  Could not fetch hospitals from API: {e}")
             return [], []
