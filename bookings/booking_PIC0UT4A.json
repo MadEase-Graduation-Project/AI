@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "PIC0UT4A",
+  "hospital_id": "unknown",
+  "patient_name": "emy",
+  "patient_phone": "014667889",
+  "appointment_date": "2025-07-01",
+  "appointment_time": "02:00 PM",
+  "symptoms": null,
+  "booking_timestamp": "2025-06-28T18:31:06.788894"
+}

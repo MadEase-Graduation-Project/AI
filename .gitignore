@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Model files
+*.joblib
+models/
+
+# Data files (optional, comment out if you want to keep data in repo)
+#*.csv
+
+# Plots (optional, comment out if you want to keep images in repo)
+#*.png
+
+# Virtual environment
+chatbot_env/
+
+# System files
+*.DS_Store
+
+# Reports (optional, if generated)
+#reports/ 

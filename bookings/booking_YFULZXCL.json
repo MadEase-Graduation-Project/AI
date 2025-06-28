@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "YFULZXCL",
+  "hospital_id": "unknown",
+  "patient_name": "Eman Mohie",
+  "patient_phone": "01010484291",
+  "appointment_date": "2025-07-01",
+  "appointment_time": "12:00 PM",
+  "symptoms": null,
+  "booking_timestamp": "2025-06-28T18:40:31.325247"
+}
