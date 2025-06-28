@@ -887,14 +887,8 @@ class ChatbotInterface:
                     
                     self._provide_doctor_recommendations(predicted_disease)
                     
-                    # Ask if user wants to book hospital appointment
-                    print("\n🏥 Would you like to book a hospital appointment?")
-                    book_choice = self.get_valid_input("(yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
-                    if book_choice in ["yes", "y"]:
-                        self.show_hospital_booking_menu(location=self.user_location, symptoms=confirmed_symptoms)
-                    
                     print("-" * 130)
-                    print("Thank you for using Healthcare Chatbot! 🙏")
+                    print("Thank you for using Healthcare Chatbot! \U0001F64F")
                     print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
                     return  # Return to main menu after diagnosis
                     
@@ -1365,12 +1359,6 @@ class ChatbotInterface:
             
             self._provide_doctor_recommendations(predicted_disease)
             
-            # Ask if user wants to book hospital appointment
-            print("\n🏥 Would you like to book a hospital appointment?")
-            book_choice = self.get_valid_input("(yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
-            if book_choice in ["yes", "y"]:
-                self.show_hospital_booking_menu(location=self.user_location, symptoms=confirmed_symptoms)
-            
             print("-" * 130)
             print("Thank you for using Healthcare Chatbot! \U0001F64F")
             print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
@@ -1406,6 +1394,7 @@ class ChatbotInterface:
         """Book an appointment at a hospital"""
         print("\n🏥 HOSPITAL BOOKING SYSTEM")
         print("=" * 50)
+        
         
         # Since there's no actual booking API, we'll simulate the booking process
         print(f"📋 Booking Details:")
