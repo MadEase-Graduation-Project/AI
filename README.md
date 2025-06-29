@@ -489,7 +489,7 @@ AI/
 - **Medical APIs** for doctor and hospital data
 
 ## 📄 License
-
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/MadEase-Graduation-Project/AI)
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
