@@ -48,7 +48,7 @@ def realistic_evaluation():
     
     # Load preprocessor and data
     preprocessor = DataPreprocessorFixed()
-    preprocessor.initialize_all(use_augmented=False, use_ai_augmented=True)
+    preprocessor.initialize_all(use_augmented=False, use_ai_augmented=False, use_safe_augmented=True)
     X = preprocessor.x
     y = preprocessor.y
     # Load model and encoder

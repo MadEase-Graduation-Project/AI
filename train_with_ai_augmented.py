@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Training Script with AI-Augmented Dataset - ENHANCED VERSION
-Uses the AI-powered augmented dataset for training with improved confidence
+Training Script with Safe Augmented Dataset - ENHANCED VERSION
+Uses the safe medically validated augmented dataset for training with improved confidence
 """
 
 import pandas as pd
@@ -18,7 +18,7 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
-from config import RANDOM_STATE, TRAINING_AI_AUGMENTED_DATA_PATH
+from config import RANDOM_STATE
 from data_preprocessing_fixed import DataPreprocessorFixed
 
 class EnhancedAITrainingPipeline:
@@ -256,7 +256,7 @@ class EnhancedAITrainingPipeline:
         print("\n📋 GENERATING ENHANCED REPORT")
         print("-" * 30)
         
-        report_content = f"""# Enhanced AI-Augmented Model Training Report
+        report_content = f"""# Enhanced Safe Augmented Model Training Report
 
 ## Model Configuration
 - **Algorithm**: Random Forest (Enhanced)
@@ -266,6 +266,7 @@ class EnhancedAITrainingPipeline:
 - **Min Samples Leaf**: 1
 - **Class Weight**: Balanced
 - **Calibration**: Isotonic
+- **Dataset**: Safe Medically Validated Augmented Data
 
 ## Performance Metrics
 - **Test Accuracy**: {results['accuracy']:.4f} ({results['accuracy']*100:.2f}%)
@@ -282,6 +283,7 @@ class EnhancedAITrainingPipeline:
 2. **Class Balancing**: Added class_weight to handle imbalanced data
 3. **Probability Calibration**: Used isotonic calibration for better confidence estimates
 4. **Out-of-bag Scoring**: Added OOB scoring for better validation
+5. **Safe Medical Data**: Uses medically validated augmented dataset with strict rules
 
 ## Files Generated
 - `enhanced_ai_augmented_model.joblib`: Enhanced trained model
@@ -291,7 +293,7 @@ class EnhancedAITrainingPipeline:
 - `enhanced_confusion_matrix.png`: Confusion matrix
 
 ---
-Generated with Enhanced AI-augmented training pipeline
+Generated with Enhanced Safe Augmented training pipeline
 """
         
         with open("reports/enhanced_ai_augmented_training_report.md", "w", encoding="utf-8") as f:
@@ -301,7 +303,7 @@ Generated with Enhanced AI-augmented training pipeline
 
 def main():
     """Main training function"""
-    print("🚀 Starting Enhanced AI-Augmented Model Training...")
+    print("🚀 Starting Enhanced Safe Augmented Model Training...")
     
     # Initialize pipeline
     pipeline = EnhancedAITrainingPipeline()
@@ -321,7 +323,7 @@ def main():
     # Generate report
     pipeline.generate_enhanced_report(results)
     
-    print("\n🎉 Enhanced training completed successfully!")
+    print("\n🎉 Enhanced safe augmented training completed successfully!")
     print("📊 Check the reports/ directory for detailed analysis")
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ def analyze_model_performance():
     
     # Load data and model
     preprocessor = DataPreprocessorFixed()
-    preprocessor.initialize_all(use_augmented=False, use_ai_augmented=True)
+    preprocessor.initialize_all(use_augmented=False, use_ai_augmented=False, use_safe_augmented=True)
     
     model = joblib.load("models/enhanced_ai_augmented_model.joblib")
     le = joblib.load("models/enhanced_ai_augmented_label_encoder.joblib")

@@ -621,11 +621,9 @@ class ChatbotInterface:
                                 else:
                                     print(f"  Rating: N/A")
                                 print(f"  Established: {hosp.get('Established', 'N/A')}")
-                                # Only show fields that actually exist and have values
-                                if hosp.get('ImgUrl'):
-                                    print(f"  Image: {hosp.get('ImgUrl')}")
+                                # Only show URL if it exists
                                 if hosp.get('Url'):
-                                    print(f"  Profile: {hosp.get('Url')}")
+                                    print(f"   🌐 Profile: {hosp.get('Url')}")
                                 print("---------------------------")
                         else:
                             print(f"No hospitals found in {hosp_location}.")
@@ -641,11 +639,9 @@ class ChatbotInterface:
                                     else:
                                         print(f"  Rating: N/A")
                                     print(f"  Established: {hosp.get('Established', 'N/A')}")
-                                    # Only show fields that actually exist and have values
-                                    if hosp.get('ImgUrl'):
-                                        print(f"  Image: {hosp.get('ImgUrl')}")
+                                    # Only show URL if it exists
                                     if hosp.get('Url'):
-                                        print(f"  Profile: {hosp.get('Url')}")
+                                        print(f"   🌐 Profile: {hosp.get('Url')}")
                                     print("---------------------------")
                             else:
                                 print(f"No hospitals found in any location.")
@@ -899,13 +895,72 @@ class ChatbotInterface:
             print("Please try again or consult a healthcare professional.")
 
     def _provide_doctor_recommendations(self, predicted_disease):
-        """Provide doctor recommendations based on predicted disease - ENHANCED VERSION"""
+        """Provide doctor recommendations based on predicted disease - ENHANCED VERSION with Emergency Hospital Support"""
         try:
             specialization = self.disease_to_specialty.get(predicted_disease, None)
             if not specialization:
                 print(f"⚠️  No medical specialty found for {predicted_disease}")
                 return
+            
+            # 🚨 EMERGENCY CASE: Recommend hospitals instead of doctors
+            if specialization == "Emergency":
+                print(f"\n🚨 EMERGENCY ALERT: {predicted_disease} detected!")
+                print("⚠️  This is a medical emergency requiring immediate hospital care.")
+                print("🏥 Recommending nearby hospitals for emergency treatment:")
                 
+                # Get location-based emergency number
+                emergency_number = self._get_emergency_numbers_by_location(self.user_location)
+                
+                # Get hospitals in user's location
+                if self.user_location:
+                    filtered_hospitals, all_hospitals = self.get_hospitals_by_location(self.user_location)
+                    
+                    if filtered_hospitals:
+                        print(f"\n🏥 Emergency Hospitals in {self.user_location}:")
+                        for i, hosp in enumerate(filtered_hospitals[:5], 1):  # Show top 5 hospitals
+                            print(f"{i}. {hosp.get('name', 'Unknown')}")
+                            print(f"   📍 Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
+                            print(f"   📞 Emergency Phone: {hosp.get('phone', 'N/A')}")
+                            rate = hosp.get('rate')
+                            if rate is not None:
+                                print(f"   ⭐ Rating: {rate}/5")
+                            else:
+                                print(f"   ⭐ Rating: N/A")
+                            print(f"   🏗️  Established: {hosp.get('Established', 'N/A')}")
+                            # Only show URL if it exists
+                            if hosp.get('Url'):
+                                print(f"   🌐 Profile: {hosp.get('Url')}")
+                            print("---------------------------")
+                        
+                        print(f"\n🚨 IMMEDIATE ACTION REQUIRED:")
+                        print(f"📞 Call emergency services: {emergency_number}")
+                        print("1. Go to the nearest hospital emergency department")
+                        print("2. Do not delay seeking medical attention")
+                        print("3. Bring someone with you if possible")
+                        
+                    else:
+                        print(f"\n⚠️  No hospitals found in {self.user_location}")
+                        print(f"🚨 Please call emergency services immediately: {emergency_number}")
+                        print("📞 Additional emergency numbers: 911 (US) / 112 (EU) / 999 (UK)")
+                        
+                        # Show available hospitals in other locations
+                        if all_hospitals:
+                            print(f"\n🏥 Available hospitals in other locations:")
+                            unique_cities = set()
+                            for hosp in all_hospitals:
+                                city = hosp.get('city', '')
+                                if city:
+                                    unique_cities.add(city)
+                            for city in sorted(unique_cities)[:10]:  # Show top 10 cities
+                                print(f"  - {city}")
+                else:
+                    emergency_number = self._get_emergency_numbers_by_location("unknown")
+                    print(f"🚨 Please call emergency services immediately: {emergency_number}")
+                    print("📞 Additional emergency numbers: 911 (US) / 112 (EU) / 999 (UK)")
+                
+                return  # Exit early for emergency cases
+                
+            # 🏥 NON-EMERGENCY CASE: Recommend doctors as usual
             doctors = self.get_doctors_by_specialization(specialization)
             if not doctors:
                 print(f"⚠️  No doctors found for specialization: {specialization}")
@@ -964,7 +1019,135 @@ class ChatbotInterface:
                     print("---------------------------")
                         
         except Exception as e:
-            print(f"⚠️  Error getting doctor recommendations: {e}")
+            print(f"⚠️  Error getting recommendations: {e}")
+
+    def _provide_emergency_hospital_recommendations(self, predicted_disease, user_location=None):
+        """Provide emergency hospital recommendations for emergency conditions"""
+        try:
+            if not user_location:
+                user_location = self.user_location
+            
+            # Get location-based emergency number
+            emergency_number = self._get_emergency_numbers_by_location(user_location)
+            
+            print(f"\n🚨 EMERGENCY ALERT: {predicted_disease} detected!")
+            print("⚠️  This is a medical emergency requiring immediate hospital care.")
+            print("🏥 Recommending nearby hospitals for emergency treatment:")
+            
+            # Get hospitals in user's location
+            if user_location:
+                filtered_hospitals, all_hospitals = self.get_hospitals_by_location(user_location)
+                
+                if filtered_hospitals:
+                    print(f"\n🏥 Emergency Hospitals in {user_location}:")
+                    for i, hosp in enumerate(filtered_hospitals[:5], 1):  # Show top 5 hospitals
+                        print(f"{i}. {hosp.get('name', 'Unknown')}")
+                        print(f"   📍 Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
+                        print(f"   📞 Emergency Phone: {hosp.get('phone', 'N/A')}")
+                        rate = hosp.get('rate')
+                        if rate is not None:
+                            print(f"   ⭐ Rating: {rate}/5")
+                        else:
+                            print(f"   ⭐ Rating: N/A")
+                        print(f"   🏗️  Established: {hosp.get('Established', 'N/A')}")
+                        # Only show URL if it exists
+                        if hosp.get('Url'):
+                            print(f"   🌐 Profile: {hosp.get('Url')}")
+                        print("---------------------------")
+                    
+                    print(f"\n🚨 IMMEDIATE ACTION REQUIRED:")
+                    print(f"📞 Call emergency services: {emergency_number}")
+                    print("1. Go to the nearest hospital emergency department")
+                    print("2. Do not delay seeking medical attention")
+                    print("3. Bring someone with you if possible")
+                    
+                    # Provide emergency-specific advice based on disease
+                    if predicted_disease == "Heart attack":
+                        print("\n💔 HEART ATTACK SPECIFIC ADVICE:")
+                        print(f"- Call emergency services immediately: {emergency_number}")
+                        print("- Sit down and rest, avoid any physical exertion")
+                        print("- Take aspirin if available (unless allergic)")
+                        print("- Loosen tight clothing")
+                        print("- Stay calm and wait for emergency responders")
+                    
+                    elif predicted_disease == "Drug Reaction":
+                        print("\n💊 DRUG REACTION SPECIFIC ADVICE:")
+                        print(f"- Call emergency services immediately: {emergency_number}")
+                        print("- Stop taking the medication if possible")
+                        print("- Monitor for breathing difficulties")
+                        print("- If severe, use epinephrine auto-injector if available")
+                        print("- Bring the medication container to the hospital")
+                    
+                else:
+                    print(f"\n⚠️  No hospitals found in {user_location}")
+                    print(f"🚨 Please call emergency services immediately: {emergency_number}")
+                    print("📞 Additional emergency numbers: 911 (US) / 112 (EU) / 999 (UK)")
+                    
+                    # Show available hospitals in other locations
+                    if all_hospitals:
+                        print(f"\n🏥 Available hospitals in other locations:")
+                        unique_cities = set()
+                        for hosp in all_hospitals:
+                            city = hosp.get('city', '')
+                            if city:
+                                unique_cities.add(city)
+                        for city in sorted(unique_cities)[:10]:  # Show top 10 cities
+                            print(f"  - {city}")
+            else:
+                print(f"🚨 Please call emergency services immediately: {emergency_number}")
+                print("📞 Additional emergency numbers: 911 (US) / 112 (EU) / 999 (UK)")
+                
+        except Exception as e:
+            print(f"⚠️  Error getting emergency hospital recommendations: {e}")
+
+    def _get_emergency_numbers_by_location(self, location):
+        """Get emergency numbers based on user location from JSON configuration"""
+        try:
+            import json
+            import os
+            
+            # Load emergency numbers from JSON file
+            json_file_path = os.path.join(os.path.dirname(__file__), 'emergency_numbers.json')
+            
+            if not os.path.exists(json_file_path):
+                print(f"⚠️  Warning: Emergency numbers file not found at {json_file_path}")
+                return "911"  # Fallback
+            
+            with open(json_file_path, 'r', encoding='utf-8') as file:
+                emergency_data = json.load(file)
+            
+            # Extract emergency numbers and major cities
+            emergency_numbers = {}
+            major_cities = emergency_data.get('major_cities', {})
+            fallback_number = emergency_data.get('fallback_number', '911')
+            
+            # Flatten the regional emergency numbers
+            for region, countries in emergency_data.get('emergency_numbers', {}).items():
+                emergency_numbers.update(countries)
+            
+            # Add major cities
+            emergency_numbers.update(major_cities)
+            
+            if not location:
+                return fallback_number
+            
+            location_lower = location.lower().strip()
+            
+            # Direct match
+            if location_lower in emergency_numbers:
+                return emergency_numbers[location_lower]
+            
+            # Partial match for cities within countries
+            for country, number in emergency_numbers.items():
+                if country in location_lower or location_lower in country:
+                    return number
+            
+            # Fallback to default emergency number
+            return fallback_number
+            
+        except Exception as e:
+            print(f"⚠️  Error loading emergency numbers: {e}")
+            return "911"  # Default fallback
 
     def get_doctors_by_specialization(self, specialization):
         """Fetch doctors from API by specialization (improved matching) - ALL PAGES"""

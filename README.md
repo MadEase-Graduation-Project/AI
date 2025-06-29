@@ -6,7 +6,7 @@
 
 A robust, AI-powered health diagnosis chatbot that leverages machine learning to interpret symptoms and predict potential medical conditions. Designed for safety, accessibility, and collaboration, this chatbot offers instant, reliable health insights, guiding users towards informed medical decisions.
 
-**🆕 Phase 3 Complete**: Enhanced with data-driven prediction explanations, intelligent follow-up questions, and comprehensive medical safety features.
+**🆕 Phase 3 Complete**: Enhanced with data-driven prediction explanations, intelligent follow-up questions, comprehensive medical safety features, hospital booking system, and emergency hospital recommendations with URLs.
 
 ## 📋 Table of Contents
 
@@ -57,6 +57,20 @@ A robust, AI-powered health diagnosis chatbot that leverages machine learning to
 13. **🏥 Doctor Recommendations**: Integration with medical API to recommend relevant specialists based on predicted disease.
 
 14. **🛡️ Enhanced Medical Safety**: Comprehensive medical validation, severity scoring, and safety warnings for all predictions.
+
+**🆕 Latest Features:**
+
+15. **🚨 Emergency Hospital Recommendations**: For emergency conditions (like heart attacks), the chatbot automatically recommends nearby hospitals with contact information and URLs.
+
+16. **🏥 Hospital Search & Booking**: Users can search for hospitals by location and book appointments directly through the chatbot.
+
+17. **🌐 Hospital URL Integration**: Emergency hospital recommendations include direct URLs to hospital profiles for easy access.
+
+18. **📞 Location-Based Emergency Numbers**: Automatic emergency number detection based on user location (supports 200+ countries and cities).
+
+19. **💊 Disease-Specific Emergency Advice**: Tailored emergency advice for specific conditions (heart attack, drug reactions, etc.).
+
+20. **📋 Appointment Booking System**: Complete hospital appointment booking with confirmation and reference numbers.
 
 ## 🚀 Quick Start
 
@@ -117,6 +131,15 @@ python3 main.py
 python3 main.py
 ```
 
+### Main Menu Options
+The chatbot now offers a comprehensive menu system:
+
+1. **Diagnosis (disease prediction)** - Core symptom analysis and disease prediction
+2. **Find a doctor** - Specialist recommendations based on diagnosis
+3. **Find a hospital** - Hospital search by location with ratings and contact info
+4. **Book hospital appointment** - Direct appointment booking system
+5. **Exit** - End the session
+
 ### Example Session
 ```
 🏥 ENHANCED SYMPTOM-BASED DISEASE PREDICTION CHATBOT
@@ -124,41 +147,89 @@ python3 main.py
 🤖 AI-Powered • Machine Learning • Medical Validation • USER MODE
 ============================================================
 
-Enter symptoms: i have pain, fever
-You entered 'pain'. This could refer to multiple symptoms:
-  1) joint_pain
-  2) chest_pain
-  3) muscle_pain
-Select all that apply (comma-separated numbers, e.g. 1,2): 1
+What would you like to do?
+1) Diagnosis (disease prediction)
+2) Find a doctor
+3) Find a hospital
+4) Book hospital appointment
+5) I am done / Exit
 
-You entered 'fever'. This could refer to:
-  1) high_fever
-  2) mild_fever
-Select all that apply (comma-separated numbers, e.g. 1,2): 2
+Enter 1, 2, 3, 4, or 5: 1
 
-Here are the symptoms I have: joint_pain, mild_fever
+Enter symptoms: i have chest pain, vomiting, breathlessness
+You entered 'chest pain'. This could refer to:
+  1) chest_pain
+Select all that apply (comma-separated numbers, e.g. 1): 1
+
+Here are the symptoms I have: chest_pain, vomiting, breathlessness
 Would you like to add, remove, or edit any symptoms? (yes/y or no/n): n
 
 🏥 PREDICTION RESULTS
 ==================================================
-🎯 Primary Diagnosis: Viral fever (78.5% confidence)
+🎯 Primary Diagnosis: Heart attack (100.0% confidence)
 
 📊 Prediction Explanation:
 This prediction is based on your reported symptoms:
-• joint_pain (high importance)
-• mild_fever (medium importance)
+• chest_pain (high importance)
+• vomiting (high importance)
+• breathlessness (high importance)
 
-🔍 Top 3 Possible Conditions:
-1. Viral fever (78.5%)
-2. Common Cold (15.2%)
-3. Typhoid (6.3%)
+🚨 EMERGENCY ALERT: Heart attack detected!
+⚠️  This is a medical emergency requiring immediate hospital care.
 
-⚠️ Medical Safety: Low confidence - consider adding more symptoms for better accuracy.
+🏥 Emergency Hospitals in cairo:
+1. Majdi Yakoub
+   📍 Location: Cairo, Egypt
+   📞 Emergency Phone: +20112257967
+   ⭐ Rating: 4/5
+   🏗️  Established: 30-07-2005
+   🌐 Profile: http://localhost:5173/hospital/profile?name=Majdi-Yakoub
+---------------------------
 
-🏥 DOCTOR RECOMMENDATIONS
+🚨 IMMEDIATE ACTION REQUIRED:
+📞 Call emergency services: 122
+1. Go to the nearest hospital emergency department
+2. Do not delay seeking medical attention
+3. Bring someone with you if possible
+
+💔 HEART ATTACK SPECIFIC ADVICE:
+- Call emergency services immediately: 122
+- Sit down and rest, avoid any physical exertion
+- Take aspirin if available (unless allergic)
+- Loosen tight clothing
+- Stay calm and wait for emergency responders
+```
+
+### Hospital Booking Example
+```
+🏥 HOSPITAL BOOKING MENU
 ==================================================
-📍 Location: cairo
-🎯 Recommended Specialists: General Medicine, Internal Medicine
+🏥 Found 2 hospitals in cairo:
+
+1. Majdi Yakoub
+   📍 Location: Cairo, Egypt
+   ⭐ Rating: 4/5
+   📞 Phone: +20112257967
+   🏗️  Established: 30-07-2005
+
+2. Cairo Medical Center
+   📍 Location: Cairo, Egypt
+   ⭐ Rating: N/A
+   📞 Phone: +20212345678
+   🏗️  Established: 20-05-1990
+
+Select hospital number: 1
+
+📋 BOOKING DETAILS
+Patient Name: John Doe
+Patient Phone: +20123456789
+Appointment Date: 2024-01-15
+Appointment Time: 14:30
+
+✅ BOOKING CONFIRMED!
+📅 Your appointment has been successfully booked.
+📞 You will receive a confirmation call shortly.
+🔢 Booking Reference: ABC12345
 ```
 
 ### Manual Training (Optional)
@@ -216,6 +287,8 @@ This demonstrates:
 - 🎯 **Symptom Matching**: Fuzzy matching and typo correction
 - 📊 **Prediction Explanations**: Data-driven explanations for predictions
 - 🏥 **Doctor Recommendations**: Specialist recommendations based on diagnosis
+- 🚨 **Emergency Handling**: Emergency hospital recommendations with URLs
+- 📋 **Hospital Booking**: Complete appointment booking workflow
 
 ### Demo Output Example
 ```
@@ -242,6 +315,15 @@ This prediction is based on your reported symptoms:
 📈 Severity level: Medium
 🏥 Predicted: Migraine (85.23%)
 ✅ Medical validation: Passed
+
+🚨 DEMO: Emergency Handling
+==================================================
+
+📋 Emergency symptoms: chest_pain, vomiting, breathlessness
+🏥 Predicted: Heart attack (100.0%)
+🚨 Emergency alert triggered
+🏥 Emergency hospitals recommended with URLs
+📞 Location-based emergency number: 122
 ```
 
 ## 📊 Dataset
@@ -258,6 +340,7 @@ The project utilizes a comprehensive dataset containing symptom-disease mappings
 - **Safe Augmentation**: Rule-based data augmentation maintaining medical plausibility
 - **Medical Validation**: All symptom-disease associations validated for medical accuracy
 - **Balanced Coverage**: 828 samples used in training after deduplication and balancing
+- **Emergency Mapping**: Diseases mapped to medical specialties including "Emergency" for critical conditions
 
 ## 🧠 Model Architecture
 
@@ -284,6 +367,9 @@ The disease detection model is built using advanced machine learning techniques:
 - **Comprehensive disclaimers** and safety warnings
 - **Doctor recommendations** based on medical specialties
 - **Low confidence warnings** when predictions are uncertain
+- **Emergency detection** automatically triggers hospital recommendations for critical conditions
+- **Location-based emergency numbers** provide appropriate emergency contacts
+- **Disease-specific emergency advice** offers tailored guidance for different conditions
 
 ## 🧪 Testing & QA
 
@@ -291,6 +377,8 @@ The disease detection model is built using advanced machine learning techniques:
 - **Realistic evaluation** with noisy data testing
 - **Model diagnostics** for performance analysis
 - **Medical validation testing** for prediction accuracy
+- **Emergency scenario testing** for critical condition handling
+- **Hospital booking testing** for appointment system validation
 - **Users are encouraged to test and verify chatbot behavior in realistic and edge-case scenarios**
 
 ## 📁 Project Structure
@@ -301,12 +389,9 @@ AI/
 ├── chatbot_interface.py             # Chatbot user interface (Phase 3 enhanced)
 ├── data_preprocessing_fixed.py      # Data preprocessing utilities
 ├── train_with_ai_augmented.py      # Training pipeline
-├── diagnose_model.py               # Model diagnostics
-├── realistic_evaluation.py         # Model evaluation
 ├── config.py                       # Configuration settings
 ├── requirements.txt                # Python dependencies
-├── test_setup.py                   # Setup verification script
-├── demo.py                         # Demo script
+├── emergency_numbers.json          # Emergency contact numbers (200+ countries)
 ├── Data/                           # Dataset files
 │   ├── Training.csv               # Original training data
 │   ├── Training_safe_augmented.csv # Primary dataset (safe augmented)
@@ -316,6 +401,8 @@ AI/
 ├── models/                         # Trained model files
 │   ├── enhanced_ai_augmented_model.joblib
 │   └── enhanced_ai_augmented_label_encoder.joblib
+├── bookings/                       # Generated booking files
+│   └── booking_*.json             # Appointment booking records
 ├── reports/                        # Generated reports
 └── plots/                          # Visualization outputs
 ```
@@ -350,6 +437,14 @@ AI/
    - Run `python3 test_setup.py` to identify specific issues
    - Check the error messages for guidance
 
+7. **Hospital API Issues**
+   - Check internet connection for hospital/doctor API access
+   - Verify API endpoints are accessible
+
+8. **Emergency Number Issues**
+   - Ensure `emergency_numbers.json` file is present
+   - Check file permissions and encoding
+
 ## 🤝 Contributing
 
 1. Fork the repository or create a new branch
@@ -365,16 +460,21 @@ AI/
 - Ensure medical accuracy of changes
 - Run the test suite before submitting changes
 - Maintain data-driven approach (avoid hardcoding)
+- Test emergency scenarios thoroughly
+- Validate hospital booking functionality
 
 ## 📈 Future Work
 
 1. **Enhanced Accuracy**: Integrate more comprehensive symptom-disease mappings
 2. **User History**: Track user history for personalized recommendations
 3. **Web/Mobile App**: Deploy as a web or mobile application
-4. **Hospital Integration**: Integrate hospital/doctor APIs for real-world help
+4. **Advanced Hospital Integration**: Real-time hospital availability and scheduling
 5. **Multi-language**: Expand language support beyond English and Arabic
 6. **Advanced NLP**: Implement more sophisticated natural language processing
 7. **Real-time Learning**: Incorporate user feedback for continuous improvement
+8. **Telemedicine Integration**: Direct video consultation booking
+9. **Prescription Management**: Medication tracking and reminders
+10. **Health Records**: Secure user health history management
 
 ## 🙏 Credits
 
@@ -385,6 +485,8 @@ AI/
 - **Seaborn and Matplotlib** for visualization
 - **Spacy** for natural language processing
 - **Pyttsx3** for text-to-speech functionality
+- **Requests** for API integration
+- **Medical APIs** for doctor and hospital data
 
 ## 📄 License
 
@@ -392,4 +494,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**⚠️ Medical Disclaimer**: This chatbot is for educational and informational purposes only. It is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of qualified healthcare providers for medical concerns.
+**⚠️ Medical Disclaimer**: This chatbot is for educational and informational purposes only. It is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of qualified healthcare providers for medical concerns. In emergency situations, call emergency services immediately.
