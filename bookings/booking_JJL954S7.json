@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "JJL954S7",
+  "hospital_id": "unknown",
+  "patient_name": "hager",
+  "patient_phone": "01333",
+  "appointment_date": "2025-06-30",
+  "appointment_time": "10:00 AM",
+  "symptoms": null,
+  "booking_timestamp": "2025-06-29T21:29:57.052847"
+}

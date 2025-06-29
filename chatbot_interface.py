@@ -17,7 +17,19 @@ from spacy.matcher import PhraseMatcher
 import time
 import re
 from sklearn.tree import _tree
-from config import MAX_SYMPTOM_SEARCH_RESULTS
+from config import (
+    MAX_SYMPTOM_SEARCH_RESULTS, 
+    MAX_FOLLOW_UP_QUESTIONS,
+    MAX_FOLLOW_UP_ROUNDS,
+    MAX_HOSPITAL_DISPLAY,
+    MAX_DOCTOR_DISPLAY,
+    APPOINTMENT_DAYS_AHEAD,
+    TIME_SLOTS,
+    CONFIDENCE_THRESHOLDS,
+    SEVERITY_LEVELS,
+    BOOKING_REF_LENGTH,
+    BOOKING_ARRIVAL_MINUTES
+)
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 import difflib
@@ -75,16 +87,7 @@ class ChatbotInterface:
         self._shown_warnings = set()
         
         # Configurable confidence thresholds (data-driven)
-        self.confidence_thresholds = {
-            'high_risk': 0.6,
-            'medium_risk': 0.5,
-            'low_risk': 0.4,
-            'min_confidence': 0.05,  # Minimum confidence before warning
-            'max_penalty': 0.75,     # Maximum total penalty
-            'symptom_penalty': 0.1,  # Per missing symptom penalty
-            'critical_penalty': 0.05, # Per missing critical symptom penalty
-            'severity_penalty': 0.05  # Per severity point below threshold
-        }
+        self.confidence_thresholds = CONFIDENCE_THRESHOLDS
 
         try:
             self.tts_available = True
@@ -597,16 +600,16 @@ class ChatbotInterface:
                         filtered_hospitals, all_hospitals = self.get_hospitals_by_location(hosp_location)
                         if filtered_hospitals:
                             print(f"\nHospitals in {hosp_location}:")
-                            for hosp in filtered_hospitals:
+                            for hosp in filtered_hospitals[:MAX_HOSPITAL_DISPLAY]:  # Show top 5 hospitals
                                 print(f"- Name: {hosp.get('name', 'Unknown')}")
-                                print(f"  Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
-                                print(f"  Phone: {hosp.get('phone', 'N/A')}")
+                                print(f"   📍 Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
+                                print(f"   📞 Emergency Phone: {hosp.get('phone', 'N/A')}")
                                 rate = hosp.get('rate')
                                 if rate is not None:
-                                    print(f"  Rating: {rate}/5")
+                                    print(f"   ⭐ Rating: {rate}/5")
                                 else:
-                                    print(f"  Rating: N/A")
-                                print(f"  Established: {hosp.get('Established', 'N/A')}")
+                                    print(f"   ⭐ Rating: N/A")
+                                print(f"   🏗️  Established: {hosp.get('Established', 'N/A')}")
                                 # Only show URL if it exists
                                 if hosp.get('Url'):
                                     print(f"   🌐 Profile: {hosp.get('Url')}")
@@ -694,7 +697,7 @@ class ChatbotInterface:
 
                     # Step 1.5: Symptom review/edit
                     while True:
-                        print(f"\nHere are the symptoms I have: {', '.join(confirmed_symptoms)}")
+                        print(f"\nHere are the symptoms I have: {', '.join(self._format_symptom_list(confirmed_symptoms))}")
                         confirm = input("Would you like to change this symptom? (yes/y or no/n)\n-> ").strip().lower()
                         if confirm == "yes" or confirm == "y":
                             print("Enter the new symptom (or type 'undo' to cancel):")
@@ -740,7 +743,8 @@ class ChatbotInterface:
                         j = 0
                         while j < len(rels):
                             symptom = rels[j]
-                            response = self.get_valid_input(f"   {symptom}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
+                            formatted_symptom = self._format_symptom_name(symptom)
+                            response = self.get_valid_input(f"   {formatted_symptom}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
                             if response == 'back':
                                 if j > 0:
                                     j -= 1
@@ -766,7 +770,7 @@ class ChatbotInterface:
                     # Handle intelligent follow-up questions if needed
                     if follow_up_questions:
                         print(f"\n🔍 I need more information for a reliable diagnosis. Let me ask some important questions:")
-                        print(f"Current symptoms: {', '.join(list(confirmed_symptoms))}")
+                        print(f"Current symptoms: {', '.join(self._format_symptom_list(list(confirmed_symptoms)))}")
                         print(f"Potential concern: {predicted_disease} ({conf_str} confidence)")
                         
                         if safety_warnings:
@@ -779,17 +783,18 @@ class ChatbotInterface:
                         
                         print(f"\nPlease answer these questions:")
                         follow_up_rounds = 0
-                        max_follow_up_rounds = 2  # Limit to 2 rounds maximum
+                        max_follow_up_rounds = MAX_FOLLOW_UP_ROUNDS  # Limit to 2 rounds maximum
                         previously_asked_symptoms = set()  # Track asked symptoms
                         
                         while follow_up_rounds < max_follow_up_rounds and not should_make_prediction and follow_up_questions:
                             follow_up_rounds += 1
                             
-                            for i, question in enumerate(follow_up_questions[:6], 1):  # Limit to 6 questions
+                            for i, question in enumerate(follow_up_questions[:MAX_FOLLOW_UP_QUESTIONS], 1):  # Limit to 6 questions
                                 if question.startswith("Critical:"):
                                     symptom = question.replace("Critical: ", "").replace(" ", "_")
+                                    formatted_symptom = self._format_symptom_name(symptom)
                                     if symptom not in previously_asked_symptoms:
-                                        response = self.get_valid_input(f"   {i}. {question}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                                        response = self.get_valid_input(f"   {i}. Critical: {formatted_symptom}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                                         previously_asked_symptoms.add(symptom)
                                         if response in ["yes", "y"]:
                                             confirmed_symptoms.append(symptom)
@@ -797,8 +802,9 @@ class ChatbotInterface:
                                             denied_symptoms.add(symptom)  # Track denied symptoms
                                 elif question.startswith("Important:"):
                                     symptom = question.replace("Important: ", "").replace(" ", "_")
+                                    formatted_symptom = self._format_symptom_name(symptom)
                                     if symptom not in previously_asked_symptoms:
-                                        response = self.get_valid_input(f"   {i}. {question}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                                        response = self.get_valid_input(f"   {i}. Important: {formatted_symptom}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                                         previously_asked_symptoms.add(symptom)
                                         if response in ["yes", "y"]:
                                             confirmed_symptoms.append(symptom)
@@ -896,7 +902,7 @@ class ChatbotInterface:
                     
                     if filtered_hospitals:
                         print(f"\n🏥 Emergency Hospitals in {self.user_location}:")
-                        for i, hosp in enumerate(filtered_hospitals[:5], 1):  # Show top 5 hospitals
+                        for i, hosp in enumerate(filtered_hospitals[:MAX_HOSPITAL_DISPLAY], 1):  # Show top 5 hospitals
                             print(f"{i}. {hosp.get('name', 'Unknown')}")
                             print(f"   📍 Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
                             print(f"   📞 Emergency Phone: {hosp.get('phone', 'N/A')}")
@@ -1019,7 +1025,7 @@ class ChatbotInterface:
                 
                 if filtered_hospitals:
                     print(f"\n🏥 Emergency Hospitals in {user_location}:")
-                    for i, hosp in enumerate(filtered_hospitals[:5], 1):  # Show top 5 hospitals
+                    for i, hosp in enumerate(filtered_hospitals[:MAX_HOSPITAL_DISPLAY], 1):  # Show top 5 hospitals
                         print(f"{i}. {hosp.get('name', 'Unknown')}")
                         print(f"   📍 Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}")
                         print(f"   📞 Emergency Phone: {hosp.get('phone', 'N/A')}")
@@ -1174,17 +1180,7 @@ class ChatbotInterface:
                     filtered.append(doc)
             
             # Sort doctors by rating (highest to lowest)
-            # Handle cases where rating might be None or 'N/A'
-            def get_rating_value(doc):
-                rating = doc.get('rate')
-                if rating is None or rating == 'N/A' or rating == '':
-                    return 0.0  # Put doctors without rating at the end
-                try:
-                    return float(rating)
-                except (ValueError, TypeError):
-                    return 0.0
-            
-            filtered.sort(key=get_rating_value, reverse=True)
+            filtered.sort(key=lambda doc: self._extract_rating_value(doc), reverse=True)
             
             return filtered
             
@@ -1236,13 +1232,13 @@ class ChatbotInterface:
                     high_severity_symptoms.append((symptom, severity_value))
         
         # Determine severity level
-        if total_severity >= 20:
+        if total_severity >= SEVERITY_LEVELS['critical']:
             severity_level = "Critical"
-        elif total_severity >= 15:
+        elif total_severity >= SEVERITY_LEVELS['high']:
             severity_level = "High"
-        elif total_severity >= 10:
+        elif total_severity >= SEVERITY_LEVELS['moderate']:
             severity_level = "Moderate"
-        elif total_severity >= 5:
+        elif total_severity >= SEVERITY_LEVELS['mild']:
             severity_level = "Mild"
         else:
             severity_level = "Very Mild"
@@ -1280,7 +1276,7 @@ class ChatbotInterface:
             recommendations.append("⚠️  HIGH PRIORITY: Consult a doctor within 24 hours")
             recommendations.append("Monitor symptoms closely")
             if high_severity_symptoms:
-                recommendations.append(f"High severity symptoms detected: {', '.join([s[0] for s in high_severity_symptoms])}")
+                recommendations.append(f"High severity symptoms detected: {', '.join([self._format_symptom_name(s[0]) for s in high_severity_symptoms])}")
         elif severity_level == "Moderate":
             recommendations.append("📋 MODERATE: Schedule a doctor appointment soon")
             recommendations.append("Continue monitoring symptoms")
@@ -1383,7 +1379,7 @@ class ChatbotInterface:
             
             # Add symptom review and edit functionality for free text mode
             while True:
-                print(f"\nHere are the symptoms I have: {', '.join(corrected)}")
+                print(f"\nHere are the symptoms I have: {', '.join(self._format_symptom_list(corrected))}")
                 print("What would you like to do?")
                 print("1) Add a symptom")
                 print("2) Remove a symptom") 
@@ -1433,13 +1429,15 @@ class ChatbotInterface:
                     
                     print("Which symptom would you like to remove?")
                     for i, symptom in enumerate(corrected, 1):
-                        print(f"{i}) {symptom}")
+                        formatted_symptom = self._format_symptom_name(symptom)
+                        print(f"{i}) {formatted_symptom}")
                     
                     try:
                         remove_choice = int(input("Enter the number of the symptom to remove: ").strip())
                         if 1 <= remove_choice <= len(corrected):
                             removed_symptom = corrected.pop(remove_choice - 1)
-                            print(f"Removed: {removed_symptom}")
+                            formatted_removed = self._format_symptom_name(removed_symptom)
+                            print(f"Removed: {formatted_removed}")
                         else:
                             print("Invalid choice. Please try again.")
                     except ValueError:
@@ -1512,12 +1510,13 @@ class ChatbotInterface:
                 symptom = corrected[i]
                 relevant = self.get_medical_relevant_symptoms(symptom)
                 if relevant:
-                    print(f"Are you experiencing any of these symptoms related to {symptom}?")
+                    print(f"Are you experiencing any of these symptoms related to {self._format_symptom_name(symptom)}?")
                     rels = [rel for rel in relevant if rel not in all_symptoms]
                     j = 0
                     while j < len(rels):
                         rel = rels[j]
-                        response = self.get_valid_input(f"   {rel}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
+                        formatted_symptom = self._format_symptom_name(rel)
+                        response = self.get_valid_input(f"   {formatted_symptom}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
                         if response == 'main_menu':
                             return
                         if response == "back":
@@ -1548,7 +1547,7 @@ class ChatbotInterface:
             follow_up_processed = False  # Track if follow-up questions were processed
             if follow_up_questions:
                 print(f"\n🔍 I need more information for a reliable diagnosis. Let me ask some important questions:")
-                print(f"Current symptoms: {', '.join(list(all_symptoms))}")
+                print(f"Current symptoms: {', '.join(self._format_symptom_list(list(all_symptoms)))}")
                 print(f"Potential concern: {predicted_disease} ({conf_str} confidence)")
                 
                 if safety_warnings:
@@ -1561,7 +1560,7 @@ class ChatbotInterface:
                 
                 print(f"\nPlease answer these questions:")
                 follow_up_rounds = 0
-                max_follow_up_rounds = 2  # Limit to 2 rounds maximum
+                max_follow_up_rounds = MAX_FOLLOW_UP_ROUNDS  # Limit to 2 rounds maximum
                 previously_asked_symptoms = set()  # Track asked symptoms
                 denied_symptoms = set()  # Track denied symptoms
                 confirmed_symptoms = list(all_symptoms)  # Initialize with current symptoms
@@ -1569,11 +1568,12 @@ class ChatbotInterface:
                 while follow_up_rounds < max_follow_up_rounds and not should_make_prediction and follow_up_questions:
                     follow_up_rounds += 1
                     
-                    for i, question in enumerate(follow_up_questions[:6], 1):  # Limit to 6 questions
+                    for i, question in enumerate(follow_up_questions[:MAX_FOLLOW_UP_QUESTIONS], 1):  # Limit to 6 questions
                         if question.startswith("Critical:"):
                             symptom = question.replace("Critical: ", "").replace(" ", "_")
+                            formatted_symptom = self._format_symptom_name(symptom)
                             if symptom not in previously_asked_symptoms:
-                                response = self.get_valid_input(f"   {i}. {question}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                                response = self.get_valid_input(f"   {i}. Critical: {formatted_symptom}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                                 previously_asked_symptoms.add(symptom)
                                 if response in ["yes", "y"]:
                                     confirmed_symptoms.append(symptom)
@@ -1581,8 +1581,9 @@ class ChatbotInterface:
                                     denied_symptoms.add(symptom)  # Track denied symptoms
                         elif question.startswith("Important:"):
                             symptom = question.replace("Important: ", "").replace(" ", "_")
+                            formatted_symptom = self._format_symptom_name(symptom)
                             if symptom not in previously_asked_symptoms:
-                                response = self.get_valid_input(f"   {i}. {question}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                                response = self.get_valid_input(f"   {i}. Important: {formatted_symptom}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
                                 previously_asked_symptoms.add(symptom)
                                 if response in ["yes", "y"]:
                                     confirmed_symptoms.append(symptom)
@@ -1622,88 +1623,88 @@ class ChatbotInterface:
                         conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
                         should_make_prediction = True
                         break
-                
-                follow_up_processed = True  # Mark that follow-up questions were processed
-                
-            if was_swapped:
-                predicted_disease = post_pred
-                confidence = post_conf
-                description = self.data_preprocessor.description_list.get(predicted_disease, "")
-                precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-                severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-            else:
-                description = self.data_preprocessor.description_list.get(predicted_disease, "")
-                precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-                # Recalculate severity after follow-up questions
-                severity_score, severity_level, high_severity_symptoms, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
-                severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
-
-            # --- NEW OUTPUT STYLE ---
-            print(f"\n\U0001F4CB Current symptoms: {', '.join(list(all_symptoms))}")
-            
-            # Only ask for additional symptoms if we haven't already done follow-up questions
-            if not follow_up_processed and (confidence is None or confidence < 0.5):
-                print(f"\n\u26A0\uFE0F  I need at least 4 symptoms for a proper diagnosis. You have {len(list(all_symptoms))}.")
-                print("Let me ask about some common symptoms:")
-                for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
-                    if s not in all_symptoms:
-                        yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
-                        if yn in ["yes", "y"]:
-                            all_symptoms.add(s)
-                print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
-                print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
-                print(f"🔍 DEBUG: Before additional symptoms, denied_symptoms = {denied_symptoms}")
-                extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
-                print(f"🔍 DEBUG: User entered: '{extra}'")
-                if extra:
-                    corrected_extra = self.handle_single_symptom_input(extra)
-                    for ce in corrected_extra:
-                        if ce not in all_symptoms:
-                            all_symptoms.add(ce)
-                        else:
-                            denied_symptoms.add(ce)
-                            print(f"🔍 DEBUG: Added {ce} to denied_symptoms from additional symptoms, now = {denied_symptoms}")
+                    
+                    follow_up_processed = True  # Mark that follow-up questions were processed
+                    
+                if was_swapped:
+                    predicted_disease = post_pred
+                    confidence = post_conf
+                    description = self.data_preprocessor.description_list.get(predicted_disease, "")
+                    precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+                    severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
                 else:
-                    print(f"🔍 DEBUG: User skipped additional symptoms")
-                print(f"🔍 DEBUG: Before continue, denied_symptoms = {denied_symptoms}")
-                print(f"🔍 DEBUG: Current confirmed_symptoms = {confirmed_symptoms}")
-                print(f"🔍 DEBUG: About to continue to next iteration...")
-                # Re-run prediction with updated symptoms and denied_symptoms
-                predicted_disease, confidence, top_3_diseases, top_3_confidences, should_make_prediction, follow_up_questions, safety_warnings, risk_level, denied_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms), denied_symptoms)
-                conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
-                # Force prediction after additional symptoms section
-                should_make_prediction = True
-            
-            # Display final prediction with explanation
-            self.display_prediction_with_explanation(predicted_disease, confidence, top_3_diseases, top_3_confidences, list(all_symptoms))
-            
-            desc_to_show = None
-            if isinstance(description, list):
-                seen = set()
-                for desc in description:
-                    if desc and desc not in seen:
-                        desc_to_show = desc
-                        break
-            elif isinstance(description, str) and description.strip():
-                desc_to_show = description.strip()
-            
-            if desc_to_show:
-                print(f"\n📋 Description: {desc_to_show}")
-            else:
-                print("\n📋 Description: No description available for this condition.")
-            
-            if precautions:
-                print("\n💊 Take the following precautions:")
-                for i, precaution in enumerate(precautions):
-                    if precaution.strip():
-                        print(f"   {i+1}) {precaution}")
-            
-            self._provide_doctor_recommendations(predicted_disease)
-            
-            print("-" * 130)
-            print("Thank you for using Healthcare Chatbot! \U0001F64F")
-            print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-            return  # Return to main menu after diagnosis
+                    description = self.data_preprocessor.description_list.get(predicted_disease, "")
+                    precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+                    # Recalculate severity after follow-up questions
+                    severity_score, severity_level, high_severity_symptoms, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
+                    severity_recommendations = self.get_severity_based_recommendations(severity_level, high_severity_symptoms, predicted_disease)
+
+                # --- NEW OUTPUT STYLE ---
+                print(f"\n\U0001F4CB Current symptoms: {', '.join(self._format_symptom_list(list(all_symptoms)))}")
+                
+                # Only ask for additional symptoms if we haven't already done follow-up questions
+                if not follow_up_processed and (confidence is None or confidence < 0.5):
+                    print(f"\n\u26A0\uFE0F  I need at least 4 symptoms for a proper diagnosis. You have {len(list(all_symptoms))}.")
+                    print("Let me ask about some common symptoms:")
+                    for s in ['fever', 'fatigue', 'loss_of_appetite', 'weight_loss', 'chills']:
+                        if s not in all_symptoms:
+                            yn = self.get_valid_input(f"   {s.replace('_', ' ')}? (yes/y or no/n): ", valid_options=["yes", "y", "no", "n"])
+                            if yn in ["yes", "y"]:
+                                all_symptoms.add(s)
+                    print(f"\n\U0001F4CA Current analysis: {len(list(all_symptoms))} symptoms, confidence: {conf_str}")
+                    print("To improve accuracy, please tell me about any other symptoms you're experiencing:")
+                    print(f"🔍 DEBUG: Before additional symptoms, denied_symptoms = {denied_symptoms}")
+                    extra = input("Additional symptom 1 (or press Enter to skip): ").strip().replace(' ', '_')
+                    print(f"🔍 DEBUG: User entered: '{extra}'")
+                    if extra:
+                        corrected_extra = self.handle_single_symptom_input(extra)
+                        for ce in corrected_extra:
+                            if ce not in all_symptoms:
+                                all_symptoms.add(ce)
+                            else:
+                                denied_symptoms.add(ce)
+                                print(f"🔍 DEBUG: Added {ce} to denied_symptoms from additional symptoms, now = {denied_symptoms}")
+                    else:
+                        print(f"🔍 DEBUG: User skipped additional symptoms")
+                    print(f"🔍 DEBUG: Before continue, denied_symptoms = {denied_symptoms}")
+                    print(f"🔍 DEBUG: Current confirmed_symptoms = {confirmed_symptoms}")
+                    print(f"🔍 DEBUG: About to continue to next iteration...")
+                    # Re-run prediction with updated symptoms and denied_symptoms
+                    predicted_disease, confidence, top_3_diseases, top_3_confidences, should_make_prediction, follow_up_questions, safety_warnings, risk_level, denied_symptoms = self.predict_disease_with_medical_validation(list(all_symptoms), denied_symptoms)
+                    conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+                    # Force prediction after additional symptoms section
+                    should_make_prediction = True
+                
+                # Display final prediction with explanation
+                self.display_prediction_with_explanation(predicted_disease, confidence, top_3_diseases, top_3_confidences, list(all_symptoms))
+                
+                desc_to_show = None
+                if isinstance(description, list):
+                    seen = set()
+                    for desc in description:
+                        if desc and desc not in seen:
+                            desc_to_show = desc
+                            break
+                elif isinstance(description, str) and description.strip():
+                    desc_to_show = description.strip()
+                
+                if desc_to_show:
+                    print(f"\n📋 Description: {desc_to_show}")
+                else:
+                    print("\n📋 Description: No description available for this condition.")
+                
+                if precautions:
+                    print("\n💊 Take the following precautions:")
+                    for i, precaution in enumerate(precautions):
+                        if precaution.strip():
+                            print(f"   {i+1}) {precaution}")
+                
+                self._provide_doctor_recommendations(predicted_disease)
+                
+                print("-" * 130)
+                print("Thank you for using Healthcare Chatbot! \U0001F64F")
+                print("⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+                return  # Return to main menu after diagnosis
 
     def get_hospitals_by_location(self, location):
         """Fetch hospitals from API by location (city or country) - ALL PAGES"""
@@ -1751,17 +1752,7 @@ class ChatbotInterface:
                     filtered.append(hosp)
             
             # Sort hospitals by rating (highest to lowest)
-            # Handle cases where rating might be None or 'N/A'
-            def get_rating_value(hosp):
-                rating = hosp.get('rate')
-                if rating is None or rating == 'N/A' or rating == '':
-                    return 0.0  # Put hospitals without rating at the end
-                try:
-                    return float(rating)
-                except (ValueError, TypeError):
-                    return 0.0
-            
-            filtered.sort(key=get_rating_value, reverse=True)
+            filtered.sort(key=lambda hosp: self._extract_rating_value(hosp), reverse=True)
             
             return filtered, all_hospitals
             
@@ -1786,20 +1777,21 @@ class ChatbotInterface:
         print(f"  Date: {appointment_date}")
         print(f"  Time: {appointment_time}")
         if symptoms:
-            print(f"  Symptoms: {', '.join(symptoms)}")
+            formatted_symptoms = self._format_symptom_list(symptoms)
+            print(f"  Symptoms: {', '.join(formatted_symptoms)}")
         
         # Simulate booking confirmation
         print("\n✅ BOOKING CONFIRMED!")
         print("=" * 50)
         print("📅 Your appointment has been successfully booked.")
         print("📞 You will receive a confirmation call shortly.")
-        print("🏥 Please arrive 15 minutes before your appointment time.")
+        print(f"🏥 Please arrive {BOOKING_ARRIVAL_MINUTES} minutes before your appointment time.")
         print("📋 Don't forget to bring your ID and insurance card.")
         
         # Generate booking reference
         import random
         import string
-        booking_ref = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        booking_ref = ''.join(random.choices(string.ascii_uppercase + string.digits, k=BOOKING_REF_LENGTH))
         print(f"🔢 Booking Reference: {booking_ref}")
         
         return {
@@ -1858,20 +1850,15 @@ class ChatbotInterface:
             print()
         
         # Get user choice
-        while True:
-            try:
-                choice = input(f"Select hospital (1-{len(filtered_hospitals)}) or 'back' to return: ").strip()
-                if choice.lower() == 'back':
-                    return
-                
-                choice_num = int(choice)
-                if 1 <= choice_num <= len(filtered_hospitals):
-                    selected_hospital = filtered_hospitals[choice_num - 1]
-                    break
-                else:
-                    print("❌ Invalid choice. Please try again.")
-            except ValueError:
-                print("❌ Please enter a valid number.")
+        choice = self._get_numeric_input(
+            f"Select hospital (1-{len(filtered_hospitals)}) or 'back' to return: ",
+            1, len(filtered_hospitals), allow_back=True
+        )
+        
+        if choice == 'back':
+            return
+        
+        selected_hospital = filtered_hospitals[choice - 1]
         
         # Get booking details
         print(f"\n📋 Booking appointment at {selected_hospital.get('name', 'Unknown')}")
@@ -1893,43 +1880,21 @@ class ChatbotInterface:
         tomorrow = today + timedelta(days=1)
         
         print(f"\n📅 Available dates (starting from tomorrow):")
-        for i in range(7):  # Show next 7 days
+        for i in range(APPOINTMENT_DAYS_AHEAD):  # Show next 7 days
             date = tomorrow + timedelta(days=i)
             print(f"  {i+1}. {date.strftime('%Y-%m-%d')} ({date.strftime('%A')})")
         
-        while True:
-            try:
-                date_choice = input(f"Select date (1-7): ").strip()
-                date_num = int(date_choice)
-                if 1 <= date_num <= 7:
-                    appointment_date = (tomorrow + timedelta(days=date_num-1)).strftime('%Y-%m-%d')
-                    break
-                else:
-                    print("❌ Invalid choice. Please try again.")
-            except ValueError:
-                print("❌ Please enter a valid number.")
+        date_choice = self._get_numeric_input("Select date (1-7): ", 1, APPOINTMENT_DAYS_AHEAD)
+        appointment_date = (tomorrow + timedelta(days=date_choice-1)).strftime('%Y-%m-%d')
         
         # Get appointment time
         print(f"\n🕐 Available time slots:")
-        time_slots = [
-            "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-            "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"
-        ]
         
-        for i, time_slot in enumerate(time_slots, 1):
+        for i, time_slot in enumerate(TIME_SLOTS, 1):
             print(f"  {i}. {time_slot}")
         
-        while True:
-            try:
-                time_choice = input(f"Select time (1-{len(time_slots)}): ").strip()
-                time_num = int(time_choice)
-                if 1 <= time_num <= len(time_slots):
-                    appointment_time = time_slots[time_num - 1]
-                    break
-                else:
-                    print("❌ Invalid choice. Please try again.")
-            except ValueError:
-                print("❌ Please enter a valid number.")
+        time_choice = self._get_numeric_input(f"Select time (1-{len(TIME_SLOTS)}): ", 1, len(TIME_SLOTS))
+        appointment_time = TIME_SLOTS[time_choice - 1]
         
         # Confirm booking
         print(f"\n📋 Booking Summary:")
@@ -1939,7 +1904,8 @@ class ChatbotInterface:
         print(f"  Date: {appointment_date}")
         print(f"  Time: {appointment_time}")
         if symptoms:
-            print(f"  Symptoms: {', '.join(symptoms)}")
+            formatted_symptoms = self._format_symptom_list(symptoms)
+            print(f"  Symptoms: {', '.join(formatted_symptoms)}")
         
         confirm = input("\nConfirm booking? (yes/no): ").strip().lower()
         if confirm in ['yes', 'y']:
@@ -2334,14 +2300,14 @@ class ChatbotInterface:
             symptom_importance_scores.sort(key=lambda x: x[1], reverse=True)
             
             # Get top 3 most influential symptoms
-            top_influential_symptoms = [s[0].replace('_', ' ') for s in symptom_importance_scores[:3]]
+            top_influential_symptoms = [s[0] for s in symptom_importance_scores[:3]]
             
             # Create explanation text
-            symptoms_text = ', '.join([s.replace('_', ' ') for s in confirmed_symptoms])
+            symptoms_text = ', '.join([self._format_symptom_name(s) for s in confirmed_symptoms])
             
             if top_influential_symptoms:
                 explanation = f"Based on your symptoms: {symptoms_text}. "
-                explanation += f"The most influential symptoms for this prediction were: {', '.join(top_influential_symptoms)}."
+                explanation += f"The most influential symptoms for this prediction were: {', '.join([self._format_symptom_name(s) for s in top_influential_symptoms])}."
             else:
                 explanation = f"Based on your symptoms: {symptoms_text}."
             
@@ -2349,7 +2315,7 @@ class ChatbotInterface:
             
         except Exception as e:
             # Fallback explanation if feature importance calculation fails
-            symptoms_text = ', '.join([s.replace('_', ' ') for s in confirmed_symptoms])
+            symptoms_text = ', '.join([self._format_symptom_name(s) for s in confirmed_symptoms])
             return f"Based on your symptoms: {symptoms_text}."
 
     def display_prediction_with_explanation(self, predicted_disease, confidence, top_3_diseases, top_3_confidences, confirmed_symptoms):
@@ -2380,5 +2346,45 @@ class ChatbotInterface:
                 print("⚠️  Low confidence - please consult a healthcare professional immediately")
         else:
             print(f"\n⚠️  Unable to make a confident prediction. Please consult a healthcare professional.")
+
+    def _format_symptom_name(self, symptom):
+        """Convert symptom name from underscore format to user-friendly format"""
+        if not symptom:
+            return symptom
+        
+        # Replace underscores with spaces and capitalize properly
+        return symptom.replace('_', ' ').title()
+
+    def _format_symptom_list(self, symptoms):
+        """Format a list of symptoms to user-friendly format"""
+        if not symptoms:
+            return []
+        return [self._format_symptom_name(symptom) for symptom in symptoms]
+
+    def _extract_rating_value(self, item, rating_key='rate'):
+        """Extract and convert rating value from an item (doctor/hospital)"""
+        rating = item.get(rating_key)
+        if rating is None or rating == 'N/A' or rating == '':
+            return 0.0  # Put items without rating at the end
+        try:
+            return float(rating)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def _get_numeric_input(self, prompt, min_val, max_val, allow_back=False):
+        """Get validated numeric input within a range"""
+        while True:
+            try:
+                choice = input(prompt).strip()
+                if allow_back and choice.lower() == 'back':
+                    return 'back'
+                
+                choice_num = int(choice)
+                if min_val <= choice_num <= max_val:
+                    return choice_num
+                else:
+                    print(f"❌ Please enter a number between {min_val} and {max_val}.")
+            except ValueError:
+                print("❌ Please enter a valid number.")
 
 

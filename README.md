@@ -6,7 +6,7 @@
 
 A robust, AI-powered health diagnosis chatbot that leverages machine learning to interpret symptoms and predict potential medical conditions. Designed for safety, accessibility, and collaboration, this chatbot offers instant, reliable health insights, guiding users towards informed medical decisions.
 
-**🆕 Phase 3 Complete**: Enhanced with data-driven prediction explanations, intelligent follow-up questions, comprehensive medical safety features, hospital booking system, and emergency hospital recommendations with URLs.
+**🆕 Phase 4 Complete**: Enhanced with code quality improvements, user-friendly symptom formatting, centralized configuration, and optimized maintainability while preserving all core functionality.
 
 ## 📋 Table of Contents
 
@@ -19,6 +19,7 @@ A robust, AI-powered health diagnosis chatbot that leverages machine learning to
 - [Dataset](#dataset)
 - [Model Architecture](#model-architecture)
 - [Medical Safety](#medical-safety)
+- [Code Quality](#code-quality)
 - [Testing & QA](#testing--qa)
 - [Project Structure](#project-structure)
 - [Troubleshooting](#troubleshooting)
@@ -71,6 +72,18 @@ A robust, AI-powered health diagnosis chatbot that leverages machine learning to
 19. **💊 Disease-Specific Emergency Advice**: Tailored emergency advice for specific conditions (heart attack, drug reactions, etc.).
 
 20. **📋 Appointment Booking System**: Complete hospital appointment booking with confirmation and reference numbers.
+
+**🆕 Phase 4 Code Quality Improvements:**
+
+21. **🎨 User-Friendly Symptom Display**: Symptoms now display in clean, readable format (e.g., "Acute Liver Failure" instead of "acute_liver_failure").
+
+22. **⚙️ Centralized Configuration**: All magic numbers and thresholds moved to configurable constants for easy maintenance.
+
+23. **🧹 Code Deduplication**: Eliminated duplicate rating functions and input validation patterns.
+
+24. **🔧 Utility Methods**: Created reusable utility methods for common operations.
+
+25. **📊 Optimized Performance**: Reduced code complexity and improved maintainability.
 
 ## 🚀 Quick Start
 
@@ -158,10 +171,10 @@ Enter 1, 2, 3, 4, or 5: 1
 
 Enter symptoms: i have chest pain, vomiting, breathlessness
 You entered 'chest pain'. This could refer to:
-  1) chest_pain
+  1) Chest Pain
 Select all that apply (comma-separated numbers, e.g. 1): 1
 
-Here are the symptoms I have: chest_pain, vomiting, breathlessness
+Here are the symptoms I have: Chest Pain, Vomiting, Breathlessness
 Would you like to add, remove, or edit any symptoms? (yes/y or no/n): n
 
 🏥 PREDICTION RESULTS
@@ -170,9 +183,9 @@ Would you like to add, remove, or edit any symptoms? (yes/y or no/n): n
 
 📊 Prediction Explanation:
 This prediction is based on your reported symptoms:
-• chest_pain (high importance)
-• vomiting (high importance)
-• breathlessness (high importance)
+• Chest Pain (high importance)
+• Vomiting (high importance)
+• Breathlessness (high importance)
 
 🚨 EMERGENCY ALERT: Heart attack detected!
 ⚠️  This is a medical emergency requiring immediate hospital care.
@@ -218,17 +231,19 @@ This prediction is based on your reported symptoms:
    📞 Phone: +20212345678
    🏗️  Established: 20-05-1990
 
-Select hospital number: 1
+Select hospital (1-2) or 'back' to return: 1
 
 📋 BOOKING DETAILS
 Patient Name: John Doe
 Patient Phone: +20123456789
 Appointment Date: 2024-01-15
-Appointment Time: 14:30
+Appointment Time: 10:00 AM
 
 ✅ BOOKING CONFIRMED!
 📅 Your appointment has been successfully booked.
 📞 You will receive a confirmation call shortly.
+🏥 Please arrive 15 minutes before your appointment time.
+📋 Don't forget to bring your ID and insurance card.
 🔢 Booking Reference: ABC12345
 ```
 
@@ -298,19 +313,19 @@ This demonstrates:
 ==================================================
 
 📋 Test Case 1: 'headache fever'
-✅ Extracted symptoms: headache, mild_fever
+✅ Extracted symptoms: Headache, Mild Fever
 🏥 Predicted disease: Migraine
 📊 Confidence: 85.23%
 
 📊 Prediction Explanation:
 This prediction is based on your reported symptoms:
-• headache (high importance)
-• mild_fever (medium importance)
+• Headache (high importance)
+• Mild Fever (medium importance)
 
 🔍 DEMO: Medical Validation
 ==================================================
 
-📋 Mild symptoms: headache, mild_fever
+📋 Mild symptoms: Headache, Mild Fever
 📊 Severity score: 8
 📈 Severity level: Medium
 🏥 Predicted: Migraine (85.23%)
@@ -319,7 +334,7 @@ This prediction is based on your reported symptoms:
 🚨 DEMO: Emergency Handling
 ==================================================
 
-📋 Emergency symptoms: chest_pain, vomiting, breathlessness
+📋 Emergency symptoms: Chest Pain, Vomiting, Breathlessness
 🏥 Predicted: Heart attack (100.0%)
 🚨 Emergency alert triggered
 🏥 Emergency hospitals recommended with URLs
@@ -371,6 +386,35 @@ The disease detection model is built using advanced machine learning techniques:
 - **Location-based emergency numbers** provide appropriate emergency contacts
 - **Disease-specific emergency advice** offers tailored guidance for different conditions
 
+## 🎨 Code Quality
+
+**🆕 Phase 4 Improvements:**
+
+### **Code Deduplication**
+- ✅ Eliminated duplicate `get_rating_value` functions for doctors and hospitals
+- ✅ Created `_extract_rating_value()` utility method
+- ✅ Reduced code by ~20 lines while improving maintainability
+
+### **Input Validation Optimization**
+- ✅ Created `_get_numeric_input()` utility method for consistent validation
+- ✅ Replaced multiple `while True` loops with reusable utility
+- ✅ Reduced repetitive code in hospital booking menu by ~30 lines
+
+### **Centralized Configuration**
+- ✅ Moved 15+ hardcoded values to `config.py`
+- ✅ Added configuration constants for UI limits, time slots, confidence thresholds
+- ✅ Easy to modify limits and thresholds without code changes
+
+### **User-Friendly Symptom Display**
+- ✅ Created `_format_symptom_name()` and `_format_symptom_list()` methods
+- ✅ Symptoms now display as "Acute Liver Failure" instead of "acute_liver_failure"
+- ✅ Consistent formatting throughout the application
+
+### **Performance Improvements**
+- ✅ Reduced code complexity and improved maintainability
+- ✅ Better separation of concerns
+- ✅ More professional and readable codebase
+
 ## 🧪 Testing & QA
 
 - **Comprehensive test cases** for typos, ambiguous symptoms, generic terms, and edge-case scenarios
@@ -379,6 +423,7 @@ The disease detection model is built using advanced machine learning techniques:
 - **Medical validation testing** for prediction accuracy
 - **Emergency scenario testing** for critical condition handling
 - **Hospital booking testing** for appointment system validation
+- **Code quality testing** for maintainability and performance
 - **Users are encouraged to test and verify chatbot behavior in realistic and edge-case scenarios**
 
 ## 📁 Project Structure
@@ -386,10 +431,10 @@ The disease detection model is built using advanced machine learning techniques:
 ```
 AI/
 ├── main.py                          # Main application entry point
-├── chatbot_interface.py             # Chatbot user interface (Phase 3 enhanced)
+├── chatbot_interface.py             # Chatbot user interface (Phase 4 enhanced)
 ├── data_preprocessing_fixed.py      # Data preprocessing utilities
 ├── train_with_ai_augmented.py      # Training pipeline
-├── config.py                       # Configuration settings
+├── config.py                       # Configuration settings (Phase 4 enhanced)
 ├── requirements.txt                # Python dependencies
 ├── emergency_numbers.json          # Emergency contact numbers (200+ countries)
 ├── Data/                           # Dataset files
@@ -445,6 +490,10 @@ AI/
    - Ensure `emergency_numbers.json` file is present
    - Check file permissions and encoding
 
+9. **Configuration Issues**
+   - Verify `config.py` file is present and properly formatted
+   - Check that all required constants are defined
+
 ## 🤝 Contributing
 
 1. Fork the repository or create a new branch
@@ -462,6 +511,8 @@ AI/
 - Maintain data-driven approach (avoid hardcoding)
 - Test emergency scenarios thoroughly
 - Validate hospital booking functionality
+- Use configuration constants instead of magic numbers
+- Follow the established utility method patterns
 
 ## 📈 Future Work
 
@@ -475,6 +526,8 @@ AI/
 8. **Telemedicine Integration**: Direct video consultation booking
 9. **Prescription Management**: Medication tracking and reminders
 10. **Health Records**: Secure user health history management
+11. **Advanced Configuration**: Web-based configuration interface
+12. **Performance Monitoring**: Real-time performance metrics and alerts
 
 ## 🙏 Credits
 

@@ -27,3 +27,40 @@ TEST_SIZE = 0.2
 
 # Random state for reproducibility
 RANDOM_STATE = 42
+
+# UI and Display Constants
+MAX_FOLLOW_UP_QUESTIONS = 6
+MAX_FOLLOW_UP_ROUNDS = 2
+MAX_HOSPITAL_DISPLAY = 5
+MAX_DOCTOR_DISPLAY = 10
+
+# Time and Date Constants
+APPOINTMENT_DAYS_AHEAD = 7
+TIME_SLOTS = [
+    "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
+    "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"
+]
+
+# Confidence Thresholds
+CONFIDENCE_THRESHOLDS = {
+    'high_risk': 0.6,
+    'medium_risk': 0.5,
+    'low_risk': 0.4,
+    'min_confidence': 0.05,
+    'max_penalty': 0.75,
+    'symptom_penalty': 0.1,
+    'critical_penalty': 0.05,
+    'severity_penalty': 0.05
+}
+
+# Severity Levels
+SEVERITY_LEVELS = {
+    'critical': 20,
+    'high': 15,
+    'moderate': 10,
+    'mild': 5
+}
+
+# Booking Constants
+BOOKING_REF_LENGTH = 8
+BOOKING_ARRIVAL_MINUTES = 15
