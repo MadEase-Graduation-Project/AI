@@ -26,7 +26,7 @@ def test_dependencies():
     print("\n📦 Testing Dependencies...")
     dependencies = [
         'numpy', 'pandas', 'sklearn', 'matplotlib', 'seaborn',
-        'joblib', 'spacy', 'pyttsx3', 'requests'
+        'joblib', 'spacy', 'requests'
     ]
     
     failed_deps = []
@@ -159,20 +159,6 @@ def test_spacy_model():
         print(f"❌ Spacy error: {e}")
         return False
 
-def test_text_to_speech():
-    """Test text-to-speech functionality"""
-    print("\n🔊 Testing Text-to-Speech...")
-    
-    try:
-        import pyttsx3
-        engine = pyttsx3.init()
-        print("✅ Text-to-Speech initialized successfully")
-        return True
-    except Exception as e:
-        print(f"⚠️  Text-to-Speech initialization failed: {e}")
-        print("💡 This is optional and won't affect core functionality")
-        return True  # Don't fail the test for TTS issues
-
 def main():
     """Run all tests"""
     print("🧪 HEALTHCARE CHATBOT SETUP TEST")
@@ -186,8 +172,7 @@ def main():
         ("Model Files", test_model_files),
         ("Data Loading", test_data_loading),
         ("Model Loading", test_model_loading),
-        ("Spacy Model", test_spacy_model),
-        ("Text-to-Speech", test_text_to_speech)
+        ("Spacy Model", test_spacy_model)
     ]
     
     passed = 0

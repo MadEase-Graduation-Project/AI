@@ -14,11 +14,10 @@ import string
 from datetime import datetime, timedelta
 import spacy
 from spacy.matcher import PhraseMatcher
-import pyttsx3
 import time
 import re
 from sklearn.tree import _tree
-from config import TTS_RATE, TTS_VOLUME, MAX_SYMPTOM_SEARCH_RESULTS
+from config import MAX_SYMPTOM_SEARCH_RESULTS
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 import difflib
@@ -88,7 +87,6 @@ class ChatbotInterface:
         }
 
         try:
-            self.engine = pyttsx3.init()
             self.tts_available = True
             print("✓ Text-to-Speech initialized successfully")
         except Exception as e:
@@ -213,18 +211,6 @@ class ChatbotInterface:
                 for _, row in df.iterrows():
                     mapping[row['prognosis']] = row['Medical Specialties']
         return mapping
-
-    def text_to_speech(self, text):
-        """Function to convert text to speech"""
-        if not self.tts_available:
-            return
-        try:
-            self.engine.setProperty('rate', TTS_RATE)
-            self.engine.setProperty('volume', TTS_VOLUME)
-            self.engine.say(text)
-            self.engine.runAndWait()
-        except Exception as e:
-            print(f"⚠️  Warning: Text-to-Speech error: {e}")
 
     def getInfo(self):
         """Get user information and location"""
@@ -689,7 +675,6 @@ class ChatbotInterface:
                     confirmed_symptoms = []
                     restart_symptom_entry = False
                     while True:
-                        self.text_to_speech("Enter the symptom you are experiencing")
                         print("\nEnter the symptom you are experiencing  \t\t", end="->")
                         symptom_input = self.get_valid_input("", symptom_mode=True)
                         if symptom_input == 'undo':
@@ -710,24 +695,19 @@ class ChatbotInterface:
                     # Step 1.5: Symptom review/edit
                     while True:
                         print(f"\nHere are the symptoms I have: {', '.join(confirmed_symptoms)}")
-                        confirm = input("Would you like to add, remove, or edit any symptoms? (yes/y or no/n)\n-> ").strip().lower()
+                        confirm = input("Would you like to change this symptom? (yes/y or no/n)\n-> ").strip().lower()
                         if confirm == "yes" or confirm == "y":
-                            print("Enter the full, final list of symptoms separated by commas (or type 'undo' to go back and re-enter symptoms):")
-                            final = input("-> ").strip().lower()
-                            if final == 'undo':
-                                print("Undo: Returning to symptom entry step.")
-                                restart_symptom_entry = True
-                                break
-                            raw_symptoms = [s.strip() for s in final.split(',') if s.strip()]
-                            validated = []
-                            for token in raw_symptoms:
-                                # Use the centralized symptom input handling
-                                corrected_tokens = self.handle_single_symptom_input(token)
-                                validated.extend(corrected_tokens)
-                            if validated:
-                                confirmed_symptoms = validated
+                            print("Enter the new symptom (or type 'undo' to cancel):")
+                            new_symptom = input("-> ").strip().lower()
+                            if new_symptom == 'undo':
+                                print("Edit cancelled. Keeping the original symptom.")
+                                continue  # Go back to review prompt, keep original symptom
+                            # Use the centralized symptom input handling
+                            corrected_tokens = self.handle_single_symptom_input(new_symptom)
+                            if corrected_tokens:
+                                confirmed_symptoms = corrected_tokens
                             else:
-                                print("No valid symptoms entered. Please try again.")
+                                print("Symptom not recognized. Please try again.")
                                 continue
                         else:
                             break
@@ -753,14 +733,13 @@ class ChatbotInterface:
                     # Step 3: Yes/No follow-up questions (with back command)
                     relevant_symptoms = self.get_medical_relevant_symptoms(confirmed_symptoms[0])
                     if relevant_symptoms:
-                        self.text_to_speech("Are you experiencing any of these related symptoms?")
+                        print("Are you experiencing any of these related symptoms?")
                         if not self.production_mode:
                             print("🔍 Are you experiencing any of these medically related symptoms?")
                         rels = [symptom for symptom in relevant_symptoms if symptom not in confirmed_symptoms]
                         j = 0
                         while j < len(rels):
                             symptom = rels[j]
-                            self.text_to_speech(f"{symptom}, are you experiencing it?")
                             response = self.get_valid_input(f"   {symptom}? (yes/y or no/n or back): ", valid_options=["yes", "y", "no", "n", "back"], symptom_mode=True)
                             if response == 'back':
                                 if j > 0:
@@ -1401,6 +1380,115 @@ class ChatbotInterface:
                 print("No symptoms extracted. Switching to traditional mode.")
                 self.tree_to_code(self.model_trainer.clf, self.data_preprocessor.cols)
                 return  # Return to main menu after diagnosis
+            
+            # Add symptom review and edit functionality for free text mode
+            while True:
+                print(f"\nHere are the symptoms I have: {', '.join(corrected)}")
+                print("What would you like to do?")
+                print("1) Add a symptom")
+                print("2) Remove a symptom") 
+                print("3) Edit all symptoms (re-enter full list)")
+                print("4) Continue with current symptoms")
+                choice = input("Enter 1, 2, 3, or 4: ").strip()
+                
+                if choice == "1":
+                    # Add a symptom
+                    print("Enter the symptom you want to add:")
+                    new_symptom = input("-> ").strip().lower()
+                    if new_symptom == 'undo':
+                        print("Undo: Returning to symptom entry step.")
+                        return  # Go back to main menu to restart
+                    
+                    # Use the same preprocessing logic as initial free text input
+                    leading_phrases = [
+                        r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+                        r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
+                    ]
+                    tokens = re.split(r',| and | و | و|,|\band\b', new_symptom)
+                    cleaned_tokens = []
+                    for t in tokens:
+                        t = t.strip().lower()
+                        for phrase in leading_phrases:
+                            t = re.sub(phrase, '', t)
+                        t = t.strip()
+                        if t:
+                            t = t.replace(' ', '_')
+                            cleaned_tokens.append(t)
+                    
+                    for token in cleaned_tokens:
+                        corrected_tokens = self.handle_single_symptom_input(token)
+                        for ct in corrected_tokens:
+                            if ct not in corrected:
+                                corrected.append(ct)
+                                print(f"Added: {ct}")
+                            else:
+                                print(f"Symptom '{ct}' is already in your list.")
+                    continue
+                    
+                elif choice == "2":
+                    # Remove a symptom
+                    if len(corrected) == 1:
+                        print("You only have one symptom. You cannot remove it.")
+                        continue
+                    
+                    print("Which symptom would you like to remove?")
+                    for i, symptom in enumerate(corrected, 1):
+                        print(f"{i}) {symptom}")
+                    
+                    try:
+                        remove_choice = int(input("Enter the number of the symptom to remove: ").strip())
+                        if 1 <= remove_choice <= len(corrected):
+                            removed_symptom = corrected.pop(remove_choice - 1)
+                            print(f"Removed: {removed_symptom}")
+                        else:
+                            print("Invalid choice. Please try again.")
+                    except ValueError:
+                        print("Please enter a valid number.")
+                    continue
+                    
+                elif choice == "3":
+                    # Edit all symptoms (re-enter full list)
+                    print("Enter the full, final list of symptoms separated by commas (or type 'undo' to go back and re-enter symptoms):")
+                    final = input("-> ").strip().lower()
+                    if final == 'undo':
+                        print("Undo: Returning to symptom entry step.")
+                        return  # Go back to main menu to restart
+                    
+                    # Use the same preprocessing logic as initial free text input
+                    leading_phrases = [
+                        r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+                        r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
+                    ]
+                    tokens = re.split(r',| and | و | و|,|\band\b', final)
+                    cleaned_tokens = []
+                    for t in tokens:
+                        t = t.strip().lower()
+                        for phrase in leading_phrases:
+                            t = re.sub(phrase, '', t)
+                        t = t.strip()
+                        if t:
+                            t = t.replace(' ', '_')
+                            cleaned_tokens.append(t)
+                    
+                    validated = []
+                    for token in cleaned_tokens:
+                        # Use the centralized symptom input handling
+                        corrected_tokens = self.handle_single_symptom_input(token)
+                        validated.extend(corrected_tokens)
+                    if validated:
+                        corrected = validated
+                    else:
+                        print("No valid symptoms entered. Please try again.")
+                        continue
+                    continue
+                    
+                elif choice == "4":
+                    # Continue with current symptoms
+                    break
+                else:
+                    print("Invalid choice. Please enter 1, 2, 3, or 4.")
+                    continue
+            
             # Ask for duration (with confirmation)
             while True:
                 num_days = self.get_valid_input('Okay. From how many days? ', input_type=int)
@@ -1524,9 +1612,19 @@ class ChatbotInterface:
                         conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
                         should_make_prediction = True
                         break
+                    
+                    conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+                    
+                    # If still not making prediction and we've reached max rounds, force a safe prediction
+                    if follow_up_rounds >= max_follow_up_rounds and not should_make_prediction:
+                        print(f"\nBased on your symptoms, I'll provide the best possible diagnosis:")
+                        predicted_disease, confidence, top_3_diseases, top_3_confidences = self.get_safe_prediction_after_ruling_out_severe(confirmed_symptoms, top_3_diseases, top_3_confidences)
+                        conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+                        should_make_prediction = True
+                        break
                 
                 follow_up_processed = True  # Mark that follow-up questions were processed
-            
+                
             if was_swapped:
                 predicted_disease = post_pred
                 confidence = post_conf

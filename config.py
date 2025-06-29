@@ -19,10 +19,6 @@ SYMPTOM_SEVERITY_PATH = "Data/Symptom_severity.csv"
 SYMPTOM_DESCRIPTION_PATH = "Data/symptom_Description.csv"
 SYMPTOM_PRECAUTION_PATH = "Data/symptom_precaution.csv"
 
-# Text-to-Speech settings
-TTS_RATE = 150
-TTS_VOLUME = 0.9
-
 # Search settings
 MAX_SYMPTOM_SEARCH_RESULTS = 10
 
