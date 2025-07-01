@@ -38,28 +38,6 @@ import traceback
 import pandas as pd
 from datetime import datetime
 
-# قاموس مرادفات الأعراض (عربي -> إنجليزي)
-symptom_synonyms = {
-    "صداع": "headache",
-    "حرارة": "fever",
-    "مغص": "abdominal_pain",
-    "تعب": "fatigue",
-    "سعال": "cough",
-    "اسهال": "diarrhoea",
-    "قيء": "vomiting",
-    "غثيان": "nausea",
-    "طفح": "skin_rash",
-    "حكة": "itching",
-    "دوخة": "dizziness",
-    "خمول": "malaise",
-    "امساك": "constipation",
-    "رعشة": "shivering",
-    "عطس": "continuous_sneezing",
-    "الم البطن": "abdominal_pain",
-    "الم المعدة": "stomach_pain",
-    "ارهاق": "fatigue",
-    # أضف المزيد حسب الحاجة
-}
 
 class ChatbotInterface:
     def __init__(self, data_preprocessor, model_trainer):

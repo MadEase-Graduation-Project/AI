@@ -1,0 +1,1036 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uuid
+from chatbot_interface import ChatbotInterface
+from data_preprocessing_fixed import DataPreprocessorFixed
+# ModelTrainer is defined locally in this file
+
+app = FastAPI(title="Healthcare Chatbot API")
+
+# Allow CORS for all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize the SAME chatbot as CLI
+data_preprocessor = DataPreprocessorFixed()
+data_preprocessor.initialize_all(use_augmented=False, use_ai_augmented=False, use_safe_augmented=True)
+
+# Load the enhanced model
+import joblib
+import os
+from config import MODELS_DIR
+
+model_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_model.joblib")
+encoder_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_label_encoder.joblib")
+
+if not os.path.exists(model_path) or not os.path.exists(encoder_path):
+    raise FileNotFoundError("Enhanced model files not found. Please run main.py first to train the model.")
+
+model = joblib.load(model_path)
+label_encoder = joblib.load(encoder_path)
+
+# Create model trainer
+class ModelTrainer:
+    def __init__(self, model, label_encoder):
+        self.clf = model
+        self.label_encoder = label_encoder
+
+model_trainer = ModelTrainer(model, label_encoder)
+
+# Session storage
+sessions = {}
+
+class StartSessionRequest(BaseModel):
+    pass
+
+class StartSessionResponse(BaseModel):
+    session_id: str
+    prompt: str
+    options: list
+    state: str
+
+class SendMessageRequest(BaseModel):
+    session_id: str
+    user_input: str
+
+class SendMessageResponse(BaseModel):
+    prompt: str
+    options: list
+    state: str
+
+class APIChatbotInterface(ChatbotInterface):
+    """Extended ChatbotInterface that supports API mode"""
+    
+    def __init__(self, data_preprocessor, model_trainer):
+        super().__init__(data_preprocessor, model_trainer)
+        self.api_mode = True
+        self.current_state = "initializing"
+        self.last_prompt = ""
+        self.last_options = []
+        
+    def api_get_info(self):
+        """API version of getInfo - returns structured response"""
+        self.current_state = "awaiting_name"
+        self.last_prompt = "Your Name? ->"
+        self.last_options = []
+        return {
+            'prompt': self.last_prompt,
+            'options': self.last_options,
+            'state': self.current_state
+        }
+    
+    def api_handle_name(self, name):
+        """API version of name handling"""
+        if name.strip().lower() == "undo":
+            return {
+                'prompt': "Undo: Please enter your name again.\nYour Name? ->",
+                'options': [],
+                'state': "awaiting_name"
+            }
+        
+        name = name.strip()
+        if not name:
+            self.name = "User"
+            prompt = "Hello! 👋\nPlease enter your location (city or country):"
+        else:
+            self.name = name
+            prompt = f"Hello {self.name}! 👋\nPlease enter your location (city or country):"
+        
+        self.current_state = "awaiting_location"
+        return {
+            'prompt': prompt,
+            'options': [],
+            'state': self.current_state
+        }
+    
+    def api_handle_location(self, location):
+        """API version of location handling"""
+        if location.strip().lower() == "undo":
+            return {
+                'prompt': "Let's try entering your location again.\nPlease enter your location (city or country):",
+                'options': [],
+                'state': "awaiting_location"
+            }
+        
+        location = location.strip()
+        if not location:
+            return {
+                'prompt': "Location cannot be empty. Please try again.\nPlease enter your location (city or country):",
+                'options': [],
+                'state': "awaiting_location"
+            }
+        
+        self.user_location = location
+        self.current_state = "main_menu"
+        return self.api_get_main_menu()
+    
+    def api_get_main_menu(self):
+        """API version of main menu"""
+        prompt = ("What would you like to do?\n"
+                  "1) Diagnosis (disease prediction)\n"
+                  "2) Find a doctor\n"
+                  "3) Find a hospital\n"
+                  "4) Book hospital appointment\n"
+                  "5) I am done / Exit\n"
+                  "(Type 'undo' to go back and enter your location.)\n"
+                  "Enter 1, 2, 3, 4, or 5:")
+        options = ["1", "2", "3", "4", "5", "undo"]
+        return {
+            'prompt': prompt,
+            'options': options,
+            'state': "main_menu"
+        }
+    
+    def api_handle_main_menu(self, choice):
+        """API version of main menu handling"""
+        choice = choice.strip().lower()
+        if choice == "undo":
+            self.current_state = "awaiting_location"
+            return {
+                'prompt': "Please enter your location (city or country):",
+                'options': [],
+                'state': "awaiting_location"
+            }
+        
+        if choice not in ["1", "2", "3", "4", "5"]:
+            return {
+                'prompt': "Invalid choice. Please enter 1, 2, 3, 4, or 5.\n" + self.api_get_main_menu()['prompt'],
+                'options': ["1", "2", "3", "4", "5", "undo"],
+                'state': "main_menu"
+            }
+        
+        if choice == "1":
+            self.current_state = "diagnosis_method"
+            prompt = ("Please choose input method:\n"
+                      "1) Traditional (one symptom at a time)\n"
+                      "2) Free text (write all symptoms in one sentence)\n"
+                      "Enter 1 or 2:")
+            options = ["1", "2", "undo"]
+        elif choice == "2":
+            self.current_state = "doctor_search"
+            prompt = "Enter the medical specialty you are looking for (e.g., Cardiology, Neurology, Dermatology):"
+            options = ["undo"]
+        elif choice == "3":
+            self.current_state = "hospital_search"
+            prompt = "Enter the city or country you are looking for hospitals in:"
+            options = ["undo"]
+        elif choice == "4":
+            self.current_state = "booking_menu"
+            prompt = "Booking: Please select a hospital or enter details as prompted."
+            options = ["undo"]
+        elif choice == "5":
+            self.current_state = "exit_confirm"
+            prompt = "Are you sure you want to exit? (yes/y or no/n):"
+            options = ["yes", "y", "no", "n", "undo"]
+        
+        return {
+            'prompt': prompt,
+            'options': options,
+            'state': self.current_state
+        }
+    
+    def api_handle_diagnosis_method(self, method):
+        """API version of diagnosis method handling"""
+        method = method.strip().lower()
+        if method == "undo":
+            return self.api_get_main_menu()
+        
+        if method not in ["1", "2"]:
+            return {
+                'prompt': ("Invalid choice. Please enter 1 or 2.\n"
+                          "Please choose input method:\n"
+                          "1) Traditional (one symptom at a time)\n"
+                          "2) Free text (write all symptoms in one sentence)\n"
+                          "Enter 1 or 2:"),
+                'options': ["1", "2", "undo"],
+                'state': "diagnosis_method"
+            }
+        
+        self.diagnosis_method = "traditional" if method == "1" else "free_text"
+        self.symptoms = []
+        
+        print(f"DEBUG: Method chosen: {method}")
+        print(f"DEBUG: Diagnosis method: {self.diagnosis_method}")
+        
+        if method == "1":
+            self.current_state = "diagnosis_symptom"
+            prompt = "Enter the symptom you are experiencing ->"
+            options = ["undo"]
+        else:
+            self.current_state = "diagnosis_free_text"
+            prompt = ("Please write all the symptoms you are experiencing in one sentence "
+                      "(e.g., I have headache and fever and muscle pain):")
+            options = ["undo"]
+        
+        print(f"DEBUG: Current state set to: {self.current_state}")
+        
+        return {
+            'prompt': prompt,
+            'options': options,
+            'state': self.current_state
+        }
+    
+    def api_handle_symptom_input(self, symptom_input):
+        print("DEBUG: api_handle_symptom_input called")
+        """API version of symptom input handling"""
+        # Use the EXACT same logic as CLI
+        corrected = self.handle_single_symptom_input(symptom_input)
+        
+        if len(corrected) == 1:
+            self.symptoms = corrected
+            self.current_state = "diagnosis_review"
+            prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
+            options = ["yes", "y", "no", "n"]
+        elif len(corrected) > 1:
+            self.current_state = "symptom_clarification"
+            prompt = (f"You entered '{symptom_input}'. Please specify the type(s):\n" +
+                      '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(corrected)]) +
+                      "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
+            options = [str(i+1) for i in range(len(corrected))] + ["0"]
+        else:
+            self.current_state = "diagnosis_symptom"
+            prompt = "Symptom not recognized. Please try again.\nEnter the symptom you are experiencing ->"
+            options = ["undo"]
+        
+        return {
+            'prompt': prompt,
+            'options': options,
+            'state': self.current_state,
+            'symptoms': corrected
+        }
+    
+    def api_handle_diagnosis_review(self, choice):
+        """API version of diagnosis review handling"""
+        choice = choice.strip().lower()
+        
+        if choice in ["yes", "y"]:
+            self.current_state = "diagnosis_symptom_edit"
+            prompt = "Enter the new symptom (or type 'undo' to cancel):"
+            options = ["undo"]
+        elif choice in ["no", "n"]:
+            self.current_state = "diagnosis_days"
+            prompt = "Okay. For how many days have you had these symptoms? : "
+            options = ["undo"]
+        else:
+            prompt = f"Please enter yes/y or no/n.\nHere are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
+            options = ["yes", "y", "no", "n"]
+        
+        return {
+            'prompt': prompt,
+            'options': options,
+            'state': self.current_state
+        }
+    
+    def api_handle_days_input(self, days_input):
+        """API version of days input handling"""
+        if days_input.strip().lower() == "undo":
+            self.current_state = "diagnosis_review"
+            prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n"],
+                'state': self.current_state
+            }
+        
+        try:
+            num_days = int(days_input)
+            self.days = num_days
+            self.current_state = "diagnosis_related"
+            
+            # Get related symptoms using EXACT same logic as CLI
+            relevant_symptoms = self.get_medical_relevant_symptoms(self.symptoms[0])
+            if relevant_symptoms:
+                rels = [symptom for symptom in relevant_symptoms if symptom not in self.symptoms]
+                if rels:
+                    formatted_symptom = self._format_symptom_name(rels[0])
+                    prompt = f"Are you experiencing any of these related symptoms?\n{formatted_symptom}? (yes/y or no/n or back): "
+                    options = ["yes", "y", "no", "n", "back", "undo"]
+                else:
+                    # No related symptoms, proceed to diagnosis
+                    return self.api_make_diagnosis()
+            else:
+                # No related symptoms, proceed to diagnosis
+                return self.api_make_diagnosis()
+        except ValueError:
+            prompt = "Please enter a valid number for days:"
+            options = ["undo"]
+        
+        return {
+            'prompt': prompt,
+            'options': options,
+            'state': self.current_state
+        }
+    
+    def api_make_diagnosis(self):
+        """API version of diagnosis - uses EXACT same logic as CLI"""
+        # Use the EXACT same prediction logic as CLI
+        denied_symptoms = set()
+        predicted_disease, confidence, top_3_diseases, top_3_confidences, should_make_prediction, follow_up_questions, safety_warnings, risk_level, denied_symptoms = self.predict_disease_with_medical_validation(self.symptoms, denied_symptoms)
+        
+        # Format response exactly like CLI
+        conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
+        
+        # Get description and precautions
+        description = self.data_preprocessor.description_list.get(predicted_disease, "")
+        precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+        
+        # Format output exactly like CLI
+        output = []
+        output.append(f"\n🩺 Diagnosis: {predicted_disease}")
+        output.append(f"Confidence: {conf_str}")
+        
+        if description:
+            output.append(f"\n📋 Description: {description}")
+        
+        if precautions:
+            output.append("\n💊 Take the following precautions:")
+            for i, precaution in enumerate(precautions, 1):
+                if precaution.strip():
+                    output.append(f"   {i+1}) {precaution}")
+        
+        output.append("\n⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+        
+        self.current_state = "diagnosis_complete"
+        return {
+            'prompt': '\n'.join(output),
+            'options': ["undo"],
+            'state': self.current_state,
+            'diagnosis': {
+                'disease': predicted_disease,
+                'confidence': confidence,
+                'top_3': list(zip(top_3_diseases, top_3_confidences))
+            }
+        }
+    
+    def api_handle_symptom_edit(self, symptom_input):
+        """API version of symptom editing"""
+        print(f"DEBUG: api_handle_symptom_edit called with input: '{symptom_input}'")
+        print(f"DEBUG: Current symptoms: {self.symptoms}")
+        
+        if symptom_input.strip().lower() == "undo":
+            self.current_state = "diagnosis_review"
+            prompt = f"Edit cancelled. Keeping the original symptom.\nHere are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n"],
+                'state': self.current_state
+            }
+        
+        # Use the EXACT same logic as CLI
+        corrected = self.handle_single_symptom_input(symptom_input)
+        print(f"DEBUG: handle_single_symptom_input returned: {corrected}")
+        
+        if len(corrected) == 1:
+            self.symptoms = corrected
+            self.current_state = "diagnosis_review"
+            prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n"],
+                'state': self.current_state
+            }
+        elif len(corrected) > 1:
+            self.current_state = "symptom_clarification"
+            prompt = (f"You entered '{symptom_input}'. Please specify the type(s):\n" +
+                      '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(corrected)]) +
+                      "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
+            options = [str(i+1) for i in range(len(corrected))] + ["0"]
+            return {
+                'prompt': prompt,
+                'options': options,
+                'state': self.current_state
+            }
+        else:
+            # Keep the same state but provide clear error message
+            prompt = "Symptom not recognized. Please try again.\nEnter the new symptom (or type 'undo' to cancel):"
+            return {
+                'prompt': prompt,
+                'options': ["undo"],
+                'state': "diagnosis_symptom_edit"  # Explicitly set the state
+            }
+    
+    def api_handle_free_text_input(self, user_text):
+        print("DEBUG: api_handle_free_text_input called")
+        """API version of free text symptom input"""
+        if user_text.strip().lower() == "undo":
+            self.current_state = "diagnosis_method"
+            return {
+                'prompt': "Please choose input method:\n1) Traditional (one symptom at a time)\n2) Free text (write all symptoms in one sentence)\nEnter 1 or 2:",
+                'options': ["1", "2", "undo"],
+                'state': self.current_state
+            }
+        
+        # Use the EXACT same logic as CLI
+        import re
+        leading_phrases = [
+            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+            r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
+        ]
+        tokens = re.split(r',| and | و | و|,|\band\b', user_text)
+        cleaned_tokens = []
+        for t in tokens:
+            t = t.strip().lower()
+            for phrase in leading_phrases:
+                t = re.sub(phrase, '', t)
+            t = t.strip()
+            if t:
+                t = t.replace(' ', '_')
+                cleaned_tokens.append(t)
+        
+        corrected = []
+        for token in cleaned_tokens:
+            corrected.extend(self.handle_single_symptom_input(token))
+        
+        if not corrected:
+            # No symptoms extracted, switch to traditional mode
+            self.current_state = "diagnosis_symptom"
+            return {
+                'prompt': "No symptoms extracted. Switching to traditional mode.\nEnter the symptom you are experiencing ->",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        
+        # Store the symptoms and show the review menu
+        self.symptoms = corrected
+        self.current_state = "free_text_review"
+        return self.api_get_free_text_review_menu()
+    
+    def api_get_free_text_review_menu(self):
+        """Get the free text review menu"""
+        formatted_symptoms = [self._format_symptom_name(s) for s in self.symptoms]
+        prompt = f"\nHere are the symptoms I have: {', '.join(formatted_symptoms)}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
+        return {
+            'prompt': prompt,
+            'options': ["1", "2", "3", "4", "undo"],
+            'state': self.current_state,
+            'symptoms': self.symptoms
+        }
+    
+    def api_handle_free_text_review(self, choice):
+        """API version of free text review menu handling"""
+        if choice == "1":
+            # Add a symptom
+            self.current_state = "free_text_add_symptom"
+            return {
+                'prompt': "Enter the symptom you want to add:",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        elif choice == "2":
+            # Remove a symptom
+            if len(self.symptoms) == 1:
+                return {
+                    'prompt': "You only have one symptom. You cannot remove it.\n" + self.api_get_free_text_review_menu()['prompt'],
+                    'options': ["1", "2", "3", "4", "undo"],
+                    'state': self.current_state
+                }
+            
+            self.current_state = "free_text_remove_symptom"
+            formatted_symptoms = [f"{i}) {self._format_symptom_name(s)}" for i, s in enumerate(self.symptoms, 1)]
+            prompt = "Which symptom would you like to remove?\n" + "\n".join(formatted_symptoms)
+            return {
+                'prompt': prompt,
+                'options': [str(i) for i in range(1, len(self.symptoms) + 1)] + ["undo"],
+                'state': self.current_state
+            }
+        elif choice == "3":
+            # Edit all symptoms
+            self.current_state = "free_text_edit_all"
+            return {
+                'prompt': "Enter the full, final list of symptoms separated by commas (or type 'undo' to go back):",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        elif choice == "4":
+            # Continue with current symptoms
+            self.current_state = "diagnosis_days"
+            return {
+                'prompt': "Okay. For how many days have you had these symptoms? : ",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        else:
+            return {
+                'prompt': "Invalid choice. Please enter 1, 2, 3, or 4.\n" + self.api_get_free_text_review_menu()['prompt'],
+                'options': ["1", "2", "3", "4", "undo"],
+                'state': self.current_state
+            }
+    
+    def api_handle_free_text_add_symptom(self, new_symptom):
+        """API version of adding symptom in free text mode"""
+        if new_symptom.strip().lower() == "undo":
+            self.current_state = "free_text_review"
+            return self.api_get_free_text_review_menu()
+        
+        # Use the EXACT same logic as CLI
+        import re
+        leading_phrases = [
+            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+            r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
+        ]
+        tokens = re.split(r',| and | و | و|,|\band\b', new_symptom)
+        cleaned_tokens = []
+        for t in tokens:
+            t = t.strip().lower()
+            for phrase in leading_phrases:
+                t = re.sub(phrase, '', t)
+            t = t.strip()
+            if t:
+                t = t.replace(' ', '_')
+                cleaned_tokens.append(t)
+        
+        added_symptoms = []
+        for token in cleaned_tokens:
+            corrected_tokens = self.handle_single_symptom_input(token)
+            for ct in corrected_tokens:
+                if ct not in self.symptoms:
+                    self.symptoms.append(ct)
+                    added_symptoms.append(ct)
+        
+        if added_symptoms:
+            prompt = f"Added: {', '.join(added_symptoms)}\n" + self.api_get_free_text_review_menu()['prompt']
+        else:
+            prompt = "No new symptoms added.\n" + self.api_get_free_text_review_menu()['prompt']
+        
+        self.current_state = "free_text_review"
+        return {
+            'prompt': prompt,
+            'options': ["1", "2", "3", "4", "undo"],
+            'state': self.current_state,
+            'symptoms': self.symptoms
+        }
+    
+    def api_handle_free_text_remove_symptom(self, choice):
+        """API version of removing symptom in free text mode"""
+        if choice.strip().lower() == "undo":
+            self.current_state = "free_text_review"
+            return self.api_get_free_text_review_menu()
+        
+        try:
+            remove_choice = int(choice)
+            if 1 <= remove_choice <= len(self.symptoms):
+                removed_symptom = self.symptoms.pop(remove_choice - 1)
+                formatted_removed = self._format_symptom_name(removed_symptom)
+                prompt = f"Removed: {formatted_removed}\n" + self.api_get_free_text_review_menu()['prompt']
+                self.current_state = "free_text_review"
+                return {
+                    'prompt': prompt,
+                    'options': ["1", "2", "3", "4", "undo"],
+                    'state': self.current_state,
+                    'symptoms': self.symptoms
+                }
+            else:
+                return {
+                    'prompt': "Invalid choice. Please try again.\n" + self.api_get_free_text_review_menu()['prompt'],
+                    'options': ["1", "2", "3", "4", "undo"],
+                    'state': self.current_state
+                }
+        except ValueError:
+            return {
+                'prompt': "Please enter a valid number.\n" + self.api_get_free_text_review_menu()['prompt'],
+                'options': ["1", "2", "3", "4", "undo"],
+                'state': self.current_state
+            }
+    
+    def api_handle_free_text_edit_all(self, final_symptoms):
+        """API version of editing all symptoms in free text mode"""
+        if final_symptoms.strip().lower() == "undo":
+            self.current_state = "free_text_review"
+            return self.api_get_free_text_review_menu()
+        
+        # Use the EXACT same logic as CLI
+        import re
+        leading_phrases = [
+            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+            r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
+        ]
+        tokens = re.split(r',| and | و | و|,|\band\b', final_symptoms)
+        cleaned_tokens = []
+        for t in tokens:
+            t = t.strip().lower()
+            for phrase in leading_phrases:
+                t = re.sub(phrase, '', t)
+            t = t.strip()
+            if t:
+                t = t.replace(' ', '_')
+                cleaned_tokens.append(t)
+        
+        validated = []
+        for token in cleaned_tokens:
+            corrected_tokens = self.handle_single_symptom_input(token)
+            validated.extend(corrected_tokens)
+        
+        if validated:
+            self.symptoms = validated
+            prompt = f"Symptoms updated.\n" + self.api_get_free_text_review_menu()['prompt']
+        else:
+            prompt = "No valid symptoms entered. Please try again.\n" + self.api_get_free_text_review_menu()['prompt']
+        
+        self.current_state = "free_text_review"
+        return {
+            'prompt': prompt,
+            'options': ["1", "2", "3", "4", "undo"],
+            'state': self.current_state,
+            'symptoms': self.symptoms
+        }
+    
+    def api_handle_related_symptoms(self, user_input):
+        """API version of related symptoms handling"""
+        user_input = user_input.strip().lower()
+        
+        # Initialize tracking if not already
+        if not hasattr(self, 'related_symptom_idx'):
+            self.related_symptom_idx = 0
+            self.denied_symptoms = set()
+            self.all_symptoms = list(self.symptoms)
+            self.related_symptoms_list = []
+            
+            # Build the list of (main_symptom, related_symptom) pairs to ask
+            for main_symptom in self.symptoms:
+                related = self.get_medical_relevant_symptoms(main_symptom)
+                for rel in related:
+                    if rel not in self.symptoms and rel not in self.related_symptoms_list:
+                        self.related_symptoms_list.append((main_symptom, rel))
+        
+        # If no related symptoms to ask, proceed to diagnosis
+        if not self.related_symptoms_list or self.related_symptom_idx >= len(self.related_symptoms_list):
+            # Clean up
+            delattr(self, 'related_symptom_idx')
+            delattr(self, 'related_symptoms_list')
+            delattr(self, 'denied_symptoms')
+            delattr(self, 'all_symptoms')
+            return self.api_make_diagnosis()
+        
+        idx = self.related_symptom_idx
+        main_symptom, rel_symptom = self.related_symptoms_list[idx]
+        formatted = rel_symptom.replace('_', ' ')
+        
+        if user_input == 'back':
+            if idx > 0:
+                self.related_symptom_idx -= 1
+                idx = self.related_symptom_idx
+                main_symptom, rel_symptom = self.related_symptoms_list[idx]
+                formatted = rel_symptom.replace('_', ' ')
+                prompt = f"{formatted}? (yes/y or no/n or back)"
+                return {
+                    'prompt': prompt,
+                    'options': ["yes", "y", "no", "n", "back", "undo"],
+                    'state': self.current_state
+                }
+            else:
+                prompt = 'Already at the first related symptom.'
+                return {
+                    'prompt': prompt,
+                    'options': ["yes", "y", "no", "n", "back", "undo"],
+                    'state': self.current_state
+                }
+        
+        if user_input in ['yes', 'y']:
+            if rel_symptom not in self.all_symptoms:
+                self.all_symptoms.append(rel_symptom)
+            self.related_symptom_idx += 1
+        elif user_input in ['no', 'n']:
+            self.denied_symptoms.add(rel_symptom)
+            self.related_symptom_idx += 1
+        else:
+            prompt = f"Please enter yes/y, no/n, or back.\n{formatted}? (yes/y or no/n or back)"
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n", "back", "undo"],
+                'state': self.current_state
+            }
+        
+        # Move to next related symptom or finish
+        if self.related_symptom_idx < len(self.related_symptoms_list):
+            next_main, next_rel = self.related_symptoms_list[self.related_symptom_idx]
+            formatted = next_rel.replace('_', ' ')
+            prompt = f"{formatted}? (yes/y or no/n or back)"
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n", "back", "undo"],
+                'state': self.current_state
+            }
+        else:
+            # All related symptoms processed
+            self.symptoms = self.all_symptoms
+            # Clean up
+            delattr(self, 'related_symptom_idx')
+            delattr(self, 'related_symptoms_list')
+            delattr(self, 'denied_symptoms')
+            delattr(self, 'all_symptoms')
+            return self.api_make_diagnosis()
+    
+    def api_handle_symptom_clarification(self, user_input):
+        """API version of symptom clarification"""
+        user_input = user_input.strip()
+        
+        # Parse user selection
+        selected = [x.strip() for x in user_input.split(',') if x.strip().isdigit()]
+        indices = [int(x) for x in selected if x != "0"]
+        
+        # Get the clarification options from the current state
+        # This is a simplified version - in a real implementation, you'd store these in session data
+        corrected = self.handle_single_symptom_input("")  # This is a placeholder
+        
+        chosen = []
+        if corrected and indices:
+            for idx in indices:
+                if 1 <= idx <= len(corrected):
+                    chosen.append(corrected[idx-1])
+        
+        if chosen:
+            self.symptoms = chosen
+            self.current_state = "diagnosis_review"
+            prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n"],
+                'state': self.current_state
+            }
+        else:
+            self.current_state = "diagnosis_symptom"
+            prompt = "Enter the symptom you are experiencing ->"
+            return {
+                'prompt': prompt,
+                'options': ["undo"],
+                'state': self.current_state
+            }
+    
+    def api_handle_doctor_search(self, user_input):
+        """API version of doctor search"""
+        if user_input.strip().lower() == "undo":
+            self.current_state = "awaiting_location"
+            return {
+                'prompt': "Please enter your location (city or country):",
+                'options': [],
+                'state': self.current_state
+            }
+        
+        # Simulate doctor lookup (same as CLI)
+        specialty = user_input.strip()
+        location = getattr(self, 'location', 'your area')
+        
+        # Use the EXACT same logic as CLI
+        doctors = self.get_doctors_by_specialization(specialty)
+        location_doctors = [doc for doc in doctors if doc.get('location', '').strip().lower() == str(location).strip().lower()]
+        
+        output = []
+        if location_doctors:
+            output.append(f"\nDoctors specializing in {specialty} in {location}:")
+            for doc in location_doctors:
+                output.append(f"   - {doc.get('name', 'Unknown')} ({doc.get('specialization', 'N/A')})")
+        else:
+            output.append(f"No doctors found for specialty '{specialty}' in {location}.")
+            if doctors:
+                output.append(f"\nDoctors specializing in {specialty} in other locations:")
+                for doc in doctors:
+                    output.append(f"   - {doc.get('name', 'Unknown')} ({doc.get('specialization', 'N/A')})")
+            else:
+                output.append(f"No doctors found for specialty '{specialty}' in any location.")
+        
+        output.append("\nDo you want to search for another doctor? (yes/y or no/n):")
+        
+        self.current_state = "doctor_search_again"
+        return {
+            'prompt': '\n'.join(output),
+            'options': ["yes", "y", "no", "n", "undo"],
+            'state': self.current_state
+        }
+    
+    def api_handle_doctor_search_again(self, user_input):
+        """API version of doctor search again"""
+        user_input = user_input.strip().lower()
+        
+        if user_input in ["yes", "y"]:
+            self.current_state = "doctor_search"
+            return {
+                'prompt': "Enter the medical specialty you are looking for (e.g., Cardiology, Neurology, Dermatology):",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        elif user_input in ["no", "n"]:
+            self.current_state = "main_menu"
+            return self.api_get_main_menu()
+        elif user_input == "undo":
+            self.current_state = "main_menu"
+            return self.api_get_main_menu()
+        else:
+            return {
+                'prompt': "Please enter yes/y or no/n.\nDo you want to search for another doctor? (yes/y or no/n):",
+                'options': ["yes", "y", "no", "n", "undo"],
+                'state': self.current_state
+            }
+    
+    def api_handle_hospital_search(self, user_input):
+        """API version of hospital search"""
+        if user_input.strip().lower() == "undo":
+            self.current_state = "awaiting_location"
+            return {
+                'prompt': "Please enter your location (city or country):",
+                'options': [],
+                'state': self.current_state
+            }
+        
+        # Simulate hospital lookup (same as CLI)
+        hosp_location = user_input.strip()
+        
+        # Use the EXACT same logic as CLI
+        filtered_hospitals, all_hospitals = self.get_hospitals_by_location(hosp_location)
+        
+        output = []
+        if filtered_hospitals:
+            output.append(f"\nHospitals in {hosp_location}:")
+            for hosp in filtered_hospitals[:5]:  # Show top 5 hospitals
+                output.append(f"   - {hosp.get('name', 'Unknown')}")
+        else:
+            output.append(f"No hospitals found in {hosp_location}.")
+            if all_hospitals:
+                output.append(f"\nAvailable hospitals in other locations:")
+                for hosp in all_hospitals:
+                    output.append(f"   - {hosp.get('name', 'Unknown')}")
+            else:
+                output.append(f"No hospitals found in any location.")
+        
+        output.append("\nDo you want to search for another hospital? (yes/y or no/n):")
+        
+        self.current_state = "hospital_search_again"
+        return {
+            'prompt': '\n'.join(output),
+            'options': ["yes", "y", "no", "n", "undo"],
+            'state': self.current_state
+        }
+    
+    def api_handle_hospital_search_again(self, user_input):
+        """API version of hospital search again"""
+        user_input = user_input.strip().lower()
+        
+        if user_input in ["yes", "y"]:
+            self.current_state = "hospital_search"
+            return {
+                'prompt': "Enter the city or country you are looking for hospitals in:",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        elif user_input in ["no", "n"]:
+            self.current_state = "main_menu"
+            return self.api_get_main_menu()
+        elif user_input == "undo":
+            self.current_state = "main_menu"
+            return self.api_get_main_menu()
+        else:
+            return {
+                'prompt': "Please enter yes/y or no/n.\nDo you want to search for another hospital? (yes/y or no/n):",
+                'options': ["yes", "y", "no", "n", "undo"],
+                'state': self.current_state
+            }
+    
+    def api_handle_booking_menu(self, user_input):
+        """API version of booking menu"""
+        # Simplified booking menu
+        prompt = "Hospital booking feature is not yet implemented in API mode."
+        return {
+            'prompt': prompt,
+            'options': ["undo"],
+            'state': "main_menu"
+        }
+    
+    def api_handle_exit_confirm(self, user_input):
+        """API version of exit confirmation"""
+        user_input = user_input.strip().lower()
+        
+        if user_input == 'undo':
+            self.current_state = "awaiting_location"
+            return {
+                'prompt': "Please enter your location (city or country):",
+                'options': [],
+                'state': self.current_state
+            }
+        
+        if user_input in ["yes", "y"]:
+            self.current_state = "session_end"
+            prompt = "\n👋 Thank you for using the Healthcare Chatbot! Have a great day! 🙏"
+            return {
+                'prompt': prompt,
+                'options': [],
+                'state': self.current_state
+            }
+        elif user_input in ["no", "n"]:
+            self.current_state = "main_menu"
+            return self.api_get_main_menu()
+        else:
+            prompt = "Please enter yes/y or no/n.\nAre you sure you want to exit? (yes/y or no/n):"
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n", "undo"],
+                'state': self.current_state
+            }
+
+@app.post("/start_session", response_model=StartSessionResponse)
+async def start_session():
+    """Start a new chatbot session"""
+    session_id = str(uuid.uuid4())
+    session = APIChatbotInterface(data_preprocessor, model_trainer)
+    sessions[session_id] = session
+    
+    response = session.api_get_info()
+    
+    return StartSessionResponse(
+        session_id=session_id,
+        prompt=response['prompt'],
+        options=response['options'],
+        state=response['state']
+    )
+
+@app.post("/send_message", response_model=SendMessageResponse)
+async def send_message(request: SendMessageRequest):
+    """Send a message to the chatbot and get response"""
+    if request.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    session = sessions[request.session_id]
+    
+    print(f"DEBUG: Current state: {session.current_state}")
+    print(f"DEBUG: User input: {request.user_input}")
+    
+    try:
+        # Route to appropriate handler based on current state
+        if session.current_state == "awaiting_name":
+            response = session.api_handle_name(request.user_input)
+        elif session.current_state == "awaiting_location":
+            response = session.api_handle_location(request.user_input)
+        elif session.current_state == "main_menu":
+            response = session.api_handle_main_menu(request.user_input)
+        elif session.current_state == "diagnosis_method":
+            response = session.api_handle_diagnosis_method(request.user_input)
+        elif session.current_state == "diagnosis_free_text":
+            response = session.api_handle_free_text_input(request.user_input)
+        elif session.current_state == "free_text_review":
+            response = session.api_handle_free_text_review(request.user_input)
+        elif session.current_state == "free_text_add_symptom":
+            response = session.api_handle_free_text_add_symptom(request.user_input)
+        elif session.current_state == "free_text_remove_symptom":
+            response = session.api_handle_free_text_remove_symptom(request.user_input)
+        elif session.current_state == "free_text_edit_all":
+            response = session.api_handle_free_text_edit_all(request.user_input)
+        elif session.current_state == "diagnosis_symptom":
+            response = session.api_handle_symptom_input(request.user_input)
+        elif session.current_state == "diagnosis_review":
+            response = session.api_handle_diagnosis_review(request.user_input)
+        elif session.current_state == "diagnosis_days":
+            response = session.api_handle_days_input(request.user_input)
+        elif session.current_state == "diagnosis_symptom_edit":
+            print("DEBUG: Calling api_handle_symptom_edit")
+            response = session.api_handle_symptom_edit(request.user_input)
+            print(f"DEBUG: api_handle_symptom_edit returned: {response}")
+        elif session.current_state == "diagnosis_related":
+            response = session.api_handle_related_symptoms(request.user_input)
+        elif session.current_state == "symptom_clarification":
+            response = session.api_handle_symptom_clarification(request.user_input)
+        elif session.current_state == "doctor_search":
+            response = session.api_handle_doctor_search(request.user_input)
+        elif session.current_state == "doctor_search_again":
+            response = session.api_handle_doctor_search_again(request.user_input)
+        elif session.current_state == "hospital_search":
+            response = session.api_handle_hospital_search(request.user_input)
+        elif session.current_state == "hospital_search_again":
+            response = session.api_handle_hospital_search_again(request.user_input)
+        elif session.current_state == "booking_menu":
+            response = session.api_handle_booking_menu(request.user_input)
+        elif session.current_state == "exit_confirm":
+            response = session.api_handle_exit_confirm(request.user_input)
+        else:
+            response = {
+                'prompt': f"Unknown state: {session.current_state}. Please restart.",
+                'options': [],
+                'state': session.current_state
+            }
+    except Exception as e:
+        print(f"DEBUG: Exception in send_message: {e}")
+        import traceback
+        traceback.print_exc()
+        response = {
+            'prompt': f"Error occurred: {str(e)}. Please restart.",
+            'options': [],
+            'state': session.current_state
+        }
+    
+    return SendMessageResponse(
+        prompt=response['prompt'],
+        options=response['options'],
+        state=response['state']
+    )
+
+@app.get("/symptoms")
+async def get_symptoms():
+    """Get the complete list of symptoms the model was trained on"""
+    return {"symptoms": data_preprocessor.cols}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
