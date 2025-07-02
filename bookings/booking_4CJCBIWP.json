@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "4CJCBIWP",
+  "hospital_id": "unknown",
+  "patient_name": "saa",
+  "patient_phone": "111",
+  "appointment_date": "2025-07-04",
+  "appointment_time": "09:00 AM",
+  "symptoms": null,
+  "booking_timestamp": "2025-07-03T02:26:57.868712"
+}

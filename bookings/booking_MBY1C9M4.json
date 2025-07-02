@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "MBY1C9M4",
+  "hospital_id": "unknown",
+  "patient_name": "samaa",
+  "patient_phone": "02000",
+  "appointment_date": "2025-07-04",
+  "appointment_time": "09:00 AM",
+  "symptoms": null,
+  "booking_timestamp": "2025-07-03T01:50:40.704866"
+}

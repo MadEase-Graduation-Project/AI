@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "4OAYKEHS",
+  "hospital_id": "unknown",
+  "patient_name": "samaa eltohamy ahmed",
+  "patient_phone": "2222",
+  "appointment_date": "2025-07-05",
+  "appointment_time": "09:00 AM",
+  "symptoms": null,
+  "booking_timestamp": "2025-07-03T01:14:28.108363"
+}

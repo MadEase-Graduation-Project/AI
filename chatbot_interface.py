@@ -79,18 +79,25 @@ class ChatbotInterface:
         corrected = []
         token = symptom_input.strip().lower().replace(' ', '_')
         similar_options = [s for s in self.feature_names if token in s]
-        if len(similar_options) >= 2:
-            print(f"You entered '{token}'. Please specify the type(s):")
-            for i, opt in enumerate(similar_options):
-                print(f"  {i+1}) {opt}")
-            print(f"  0) None of these / skip")
-            selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
-            indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
-            for idx in indices:
-                if 1 <= idx <= len(similar_options):
-                    if similar_options[idx-1] not in corrected:
-                        corrected.append(similar_options[idx-1])
-            return corrected
+        # Use api_mode to determine behavior
+        if hasattr(self, 'api_mode') and self.api_mode:
+            # In API mode, just return the list of options for the API handler to process
+            if len(similar_options) >= 2:
+                return similar_options
+        else:
+            # CLI/terminal mode: interactive disambiguation
+            if len(similar_options) >= 2:
+                print(f"You entered '{token}'. Please specify the type(s):")
+                for i, opt in enumerate(similar_options):
+                    print(f"  {i+1}) {opt}")
+                print(f"  0) None of these / skip")
+                selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
+                for idx in indices:
+                    if 1 <= idx <= len(similar_options):
+                        if similar_options[idx-1] not in corrected:
+                            corrected.append(similar_options[idx-1])
+                return corrected
         if token in self.feature_names:
             corrected.append(token)
             return corrected

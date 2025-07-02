@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "B2LH9U7H",
+  "hospital_id": "unknown",
+  "patient_name": "ss",
+  "patient_phone": "111",
+  "appointment_date": "2025-07-04",
+  "appointment_time": "10:00 AM",
+  "symptoms": null,
+  "booking_timestamp": "2025-07-03T01:15:03.186917"
+}

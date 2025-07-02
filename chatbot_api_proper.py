@@ -7,6 +7,7 @@ from data_preprocessing_fixed import DataPreprocessorFixed
 # ModelTrainer is defined locally in this file
 import time
 import difflib
+from config import MODELS_DIR, TIME_SLOTS, APPOINTMENT_DAYS_AHEAD, BOOKING_ARRIVAL_MINUTES
 
 app = FastAPI(title="Healthcare Chatbot API")
 
@@ -26,7 +27,6 @@ data_preprocessor.initialize_all(use_augmented=False, use_ai_augmented=False, us
 # Load the enhanced model
 import joblib
 import os
-from config import MODELS_DIR
 
 model_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_model.joblib")
 encoder_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_label_encoder.joblib")
@@ -166,14 +166,12 @@ class APIChatbotInterface(ChatbotInterface):
                 'options': [],
                 'state': "awaiting_location"
             }
-        
         if choice not in ["1", "2", "3", "4", "5"]:
             return {
                 'prompt': "Invalid choice. Please enter 1, 2, 3, 4, or 5.\n" + self.api_get_main_menu()['prompt'],
                 'options': ["1", "2", "3", "4", "5", "undo"],
                 'state': "main_menu"
             }
-        
         if choice == "1":
             self.current_state = "diagnosis_method"
             prompt = ("Please choose input method:\n"
@@ -190,19 +188,29 @@ class APIChatbotInterface(ChatbotInterface):
             prompt = "Enter the city or country you are looking for hospitals in:"
             options = ["undo"]
         elif choice == "4":
-            self.current_state = "booking_menu"
-            prompt = "Booking: Please select a hospital or enter details as prompted."
-            options = ["undo"]
+            # If user_location is set, skip location prompt and go directly to booking_location handler
+            if getattr(self, 'user_location', None):
+                self.current_state = 'booking_location'
+                return self.api_handle_booking_location(self.user_location)
+            else:
+                self.current_state = "booking_location"
+                prompt = "Enter the city or country you are looking for hospitals in:"
+                options = ["undo"]
+                return {
+                    'prompt': prompt,
+                    'options': options,
+                    'state': self.current_state
+                }
         elif choice == "5":
             self.current_state = "exit_confirm"
             prompt = "Are you sure you want to exit? (yes/y or no/n):"
             options = ["yes", "y", "no", "n", "undo"]
-        
-        return {
-            'prompt': prompt,
-            'options': options,
-            'state': self.current_state
-        }
+        if choice not in ["4"]:
+            return {
+                'prompt': prompt,
+                'options': options,
+                'state': self.current_state
+            }
     
     def api_handle_diagnosis_method(self, method):
         """API version of diagnosis method handling"""
@@ -264,6 +272,7 @@ class APIChatbotInterface(ChatbotInterface):
             options = ["yes", "y", "no", "n", "undo"]
         elif len(corrected) > 1:
             self.current_state = "symptom_clarification"
+            self.symptom_clarification_options = corrected  # Store options for clarification step
             prompt = (f"You entered '{symptom_input}'. Please specify the type(s):\n" +
                       '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(corrected)]) +
                       "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
@@ -417,8 +426,14 @@ class APIChatbotInterface(ChatbotInterface):
         doctor_lines = []
         if doctor_recommendations:
             doctor_lines.append("\n🩺 Recommended Doctors:")
-            for doc in doctor_recommendations:
-                line = f"- {doc['name']} ({doc['specialization']}, {doc['city']}, {doc['country']}, Rating: {doc['rate']})"
+            for idx, doc in enumerate(doctor_recommendations, 1):
+                line = f"{idx}. Name: {doc['name']}\n   Specialization: {doc['specialization']}\n   Location: {doc['city']}, {doc['country']}\n   Phone: {doc['phone']}\n   Rating: {doc['rate']}"
+                if doc.get('gender'):
+                    line += f"\n   Gender: {doc['gender']}"
+                if doc.get('img_url'):
+                    line += f"\n   Image: {doc['img_url']}"
+                if doc.get('profile_url'):
+                    line += f"\n   Profile: {doc['profile_url']}"
                 doctor_lines.append(line)
         else:
             doctor_lines.append("\n⚠️  No doctor recommendations available for this diagnosis and location.")
@@ -810,12 +825,13 @@ class APIChatbotInterface(ChatbotInterface):
         # Parse user selection
         selected = [x.strip() for x in user_input.split(',') if x.strip().isdigit()]
         indices = [int(x) for x in selected if x != "0"]
-        corrected = self.handle_single_symptom_input("")  # This is a placeholder
+        # Use stored options for clarification
+        options = getattr(self, 'symptom_clarification_options', [])
         chosen = []
-        if corrected and indices:
+        if options and indices:
             for idx in indices:
-                if 1 <= idx <= len(corrected):
-                    chosen.append(corrected[idx-1])
+                if 1 <= idx <= len(options):
+                    chosen.append(options[idx-1])
         if chosen:
             self.symptoms = chosen
             self.current_state = "diagnosis_review"
@@ -1011,45 +1027,301 @@ class APIChatbotInterface(ChatbotInterface):
             }
     
     def api_handle_booking_menu(self, user_input):
-        """API version of booking menu"""
-        # Simplified booking menu
-        prompt = "Hospital booking feature is not yet implemented in API mode."
+        """API version of booking menu - step-by-step booking flow"""
+        # This method is now only used for routing, not for the initial prompt
+        if not hasattr(self, 'booking_context') or self.current_state != 'booking_menu':
+            self.booking_context = {}
+            self.current_state = 'booking_location'
+            # Do not return a prompt here; handled in main menu
+        # Route to the correct booking step
+        state = self.current_state
+        if state == 'booking_location':
+            return self.api_handle_booking_location(user_input)
+        elif state == 'booking_hospital_select':
+            return self.api_handle_booking_hospital_select(user_input)
+        elif state == 'booking_patient_name':
+            return self.api_handle_booking_patient_name(user_input)
+        elif state == 'booking_patient_phone':
+            return self.api_handle_booking_patient_phone(user_input)
+        elif state == 'booking_date_select':
+            return self.api_handle_booking_date_select(user_input)
+        elif state == 'booking_time_select':
+            return self.api_handle_booking_time_select(user_input)
+        elif state == 'booking_confirm':
+            return self.api_handle_booking_confirm(user_input)
+        elif state == 'booking_result':
+            return self.api_handle_booking_result()
+        else:
+            # Reset if unknown state
+            self.current_state = 'main_menu'
+            return self.api_get_main_menu()
+
+    def api_handle_booking_location(self, user_input):
+        if not hasattr(self, 'booking_context'):
+            self.booking_context = {}
+        # If user_location is set and user_input matches it, use it directly
+        if getattr(self, 'user_location', None) and (not user_input or user_input.strip().lower() == self.user_location.strip().lower()):
+            location = self.user_location
+        else:
+            if user_input.strip().lower() == 'undo':
+                self.current_state = 'main_menu'
+                return self.api_get_main_menu()
+            location = user_input.strip()
+            # Optionally update self.user_location if user enters a new location
+            if location:
+                self.user_location = location
+        self.booking_context['location'] = location
+        filtered_hospitals, all_hospitals = self.get_hospitals_by_location(location)
+        self.booking_context['filtered_hospitals'] = filtered_hospitals
+        self.booking_context['all_hospitals'] = all_hospitals
+        if not filtered_hospitals:
+            prompt = f"No hospitals found in {location}.\n"
+            if all_hospitals:
+                prompt += "Available hospitals in other locations:\n"
+                for hosp in all_hospitals:
+                    prompt += f"- {hosp.get('name', 'Unknown')} ({hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')})\n"
+            else:
+                prompt += "No hospitals found in any location."
+            prompt += "\nEnter another city/country or 'undo' to return."
+            return {
+                'prompt': prompt,
+                'options': ['undo'],
+                'state': 'booking_location'
+            }
+        # Show hospitals
+        prompt = f"Found {len(filtered_hospitals)} hospitals in {location}:\n"
+        for i, hospital in enumerate(filtered_hospitals, 1):
+            name = hospital.get('name', 'Unknown')
+            city = hospital.get('city', 'Unknown')
+            country = hospital.get('country', 'Unknown')
+            rate = hospital.get('rate')
+            phone = hospital.get('phone', 'N/A')
+            established = hospital.get('Established', 'N/A')
+            prompt += f"{i}. {name}\n   📍 {city}, {country}\n   ⭐ {rate if rate is not None else 'N/A'}/5\n   📞 {phone}\n   🏗️  {established}\n\n"
+        prompt += f"Select hospital (1-{len(filtered_hospitals)}) or 'undo' to return:"
+        self.current_state = 'booking_hospital_select'
         return {
             'prompt': prompt,
-            'options': ["undo"],
-            'state': "main_menu"
+            'options': [str(i) for i in range(1, len(filtered_hospitals)+1)] + ['undo'],
+            'state': 'booking_hospital_select'
         }
-    
-    def api_handle_exit_confirm(self, user_input):
-        """API version of exit confirmation"""
-        user_input = user_input.strip().lower()
-        
-        if user_input == 'undo':
-            self.current_state = "awaiting_location"
+
+    def api_handle_booking_hospital_select(self, user_input):
+        if user_input.strip().lower() == 'undo':
+            self.current_state = 'booking_location'
             return {
-                'prompt': "Please enter your location (city or country):",
-                'options': [],
-                'state': self.current_state
+                'prompt': 'Enter the city or country you are looking for hospitals in:',
+                'options': ['undo'],
+                'state': 'booking_location'
             }
-        
-        if user_input in ["yes", "y"]:
-            self.current_state = "session_end"
-            prompt = "\n👋 Thank you for using the Healthcare Chatbot! Have a great day! 🙏"
+        try:
+            idx = int(user_input.strip()) - 1
+            hospitals = self.booking_context['filtered_hospitals']
+            if idx < 0 or idx >= len(hospitals):
+                raise ValueError
+        except Exception:
             return {
-                'prompt': prompt,
-                'options': [],
-                'state': self.current_state
+                'prompt': f"Invalid selection. Please enter a number between 1 and {len(self.booking_context['filtered_hospitals'])} or 'undo':",
+                'options': [str(i) for i in range(1, len(self.booking_context['filtered_hospitals'])+1)] + ['undo'],
+                'state': 'booking_hospital_select'
             }
-        elif user_input in ["no", "n"]:
-            self.current_state = "main_menu"
-            return self.api_get_main_menu()
+        self.booking_context['selected_hospital'] = self.booking_context['filtered_hospitals'][idx]
+        self.current_state = 'booking_patient_name'
+        return {
+            'prompt': 'Enter your full name:',
+            'options': ['undo'],
+            'state': 'booking_patient_name'
+        }
+
+    def api_handle_booking_patient_name(self, user_input):
+        if user_input.strip().lower() == 'undo':
+            self.current_state = 'booking_hospital_select'
+            return self.api_handle_booking_location(self.booking_context['location'])
+        name = user_input.strip()
+        if not name:
+            return {
+                'prompt': 'Name is required. Enter your full name:',
+                'options': ['undo'],
+                'state': 'booking_patient_name'
+            }
+        self.booking_context['patient_name'] = name
+        self.current_state = 'booking_patient_phone'
+        return {
+            'prompt': 'Enter your phone number:',
+            'options': ['undo'],
+            'state': 'booking_patient_phone'
+        }
+
+    def api_handle_booking_patient_phone(self, user_input):
+        if user_input.strip().lower() == 'undo':
+            self.current_state = 'booking_patient_name'
+            return {
+                'prompt': 'Enter your full name:',
+                'options': ['undo'],
+                'state': 'booking_patient_name'
+            }
+        phone = user_input.strip()
+        if not phone:
+            return {
+                'prompt': 'Phone number is required. Enter your phone number:',
+                'options': ['undo'],
+                'state': 'booking_patient_phone'
+            }
+        self.booking_context['patient_phone'] = phone
+        self.current_state = 'booking_date_select'
+        # Show available dates
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        tomorrow = today + timedelta(days=1)
+        dates = []
+        prompt = '\n📅 Available dates (starting from tomorrow):\n'
+        for i in range(APPOINTMENT_DAYS_AHEAD):
+            date = tomorrow + timedelta(days=i)
+            dates.append(date.strftime('%Y-%m-%d'))
+            prompt += f"  {i+1}. {date.strftime('%Y-%m-%d')} ({date.strftime('%A')})\n"
+        self.booking_context['available_dates'] = dates
+        prompt += f"Select date (1-{APPOINTMENT_DAYS_AHEAD}):"
+        return {
+            'prompt': prompt,
+            'options': [str(i+1) for i in range(APPOINTMENT_DAYS_AHEAD)] + ['undo'],
+            'state': 'booking_date_select'
+        }
+
+    def api_handle_booking_date_select(self, user_input):
+        if user_input.strip().lower() == 'undo':
+            self.current_state = 'booking_patient_phone'
+            return {
+                'prompt': 'Enter your phone number:',
+                'options': ['undo'],
+                'state': 'booking_patient_phone'
+            }
+        try:
+            idx = int(user_input.strip()) - 1
+            dates = self.booking_context['available_dates']
+            if idx < 0 or idx >= len(dates):
+                raise ValueError
+        except Exception:
+            return {
+                'prompt': f"Invalid selection. Please enter a number between 1 and {len(self.booking_context['available_dates'])} or 'undo':",
+                'options': [str(i+1) for i in range(len(self.booking_context['available_dates']))] + ['undo'],
+                'state': 'booking_date_select'
+            }
+        self.booking_context['appointment_date'] = self.booking_context['available_dates'][idx]
+        self.current_state = 'booking_time_select'
+        # Show available time slots
+        prompt = '\n🕐 Available time slots:\n'
+        for i, time_slot in enumerate(TIME_SLOTS, 1):
+            prompt += f"  {i}. {time_slot}\n"
+        prompt += f"Select time (1-{len(TIME_SLOTS)}):"
+        return {
+            'prompt': prompt,
+            'options': [str(i+1) for i in range(len(TIME_SLOTS))] + ['undo'],
+            'state': 'booking_time_select'
+        }
+
+    def api_handle_booking_time_select(self, user_input):
+        if user_input.strip().lower() == 'undo':
+            self.current_state = 'booking_date_select'
+            return self.api_handle_booking_date_select('')
+        try:
+            idx = int(user_input.strip()) - 1
+            if idx < 0 or idx >= len(TIME_SLOTS):
+                raise ValueError
+        except Exception:
+            return {
+                'prompt': f"Invalid selection. Please enter a number between 1 and {len(TIME_SLOTS)} or 'undo':",
+                'options': [str(i+1) for i in range(len(TIME_SLOTS))] + ['undo'],
+                'state': 'booking_time_select'
+            }
+        self.booking_context['appointment_time'] = TIME_SLOTS[idx]
+        self.current_state = 'booking_confirm'
+        # Show summary
+        hosp = self.booking_context['selected_hospital']
+        prompt = (f"\n📋 Booking Summary:\n"
+                  f"  Hospital: {hosp.get('name', 'Unknown')}\n"
+                  f"  Patient: {self.booking_context['patient_name']}\n"
+                  f"  Phone: {self.booking_context['patient_phone']}\n"
+                  f"  Date: {self.booking_context['appointment_date']}\n"
+                  f"  Time: {self.booking_context['appointment_time']}\n"
+                  "\nConfirm booking? (yes/no):")
+        return {
+            'prompt': prompt,
+            'options': ['yes', 'y', 'no', 'n', 'undo'],
+            'state': 'booking_confirm'
+        }
+
+    def api_handle_booking_confirm(self, user_input):
+        if user_input.strip().lower() == 'undo':
+            self.current_state = 'booking_time_select'
+            return self.api_handle_booking_time_select('')
+        if user_input.strip().lower() in ['yes', 'y']:
+            # Process booking
+            hosp = self.booking_context['selected_hospital']
+            booking_result = self.book_hospital_appointment(
+                hospital_id=hosp.get('_id', 'unknown'),
+                patient_name=self.booking_context['patient_name'],
+                patient_phone=self.booking_context['patient_phone'],
+                appointment_date=self.booking_context['appointment_date'],
+                appointment_time=self.booking_context['appointment_time'],
+                symptoms=None
+            )
+            self.save_booking_to_file(booking_result)
+            self.booking_context['booking_result'] = booking_result
+            self.current_state = 'booking_result'
+            return self.api_handle_booking_result()
         else:
-            prompt = "Please enter yes/y or no/n.\nAre you sure you want to exit? (yes/y or no/n):"
+            self.current_state = 'main_menu'
             return {
-                'prompt': prompt,
-                'options': ["yes", "y", "no", "n", "undo"],
-                'state': self.current_state
+                'prompt': '❌ Booking cancelled. Returning to main menu.',
+                'options': [],
+                'state': 'main_menu'
             }
+
+    def api_handle_booking_result(self):
+        booking_result = self.booking_context.get('booking_result', {})
+        # Compose booking details section
+        details = (
+            f"\n🏥 HOSPITAL BOOKING SYSTEM\n"
+            + "=" * 50 +
+            f"\n📋 Booking Details:\n"
+            f"  Hospital ID: {booking_result.get('hospital_id', 'unknown')}\n"
+            f"  Patient Name: {booking_result.get('patient_name', '')}\n"
+            f"  Patient Phone: {booking_result.get('patient_phone', '')}\n"
+            f"  Date: {booking_result.get('appointment_date', '')}\n"
+            f"  Time: {booking_result.get('appointment_time', '')}\n"
+        )
+        # Confirmation and info section
+        confirm = (
+            f"\n✅ BOOKING CONFIRMED!\n"
+            + "=" * 50 +
+            f"\n📅 Your appointment has been successfully booked.\n"
+            f"📞 You will receive a confirmation call shortly.\n"
+            f"🏥 Please arrive {BOOKING_ARRIVAL_MINUTES} minutes before your appointment time.\n"
+            f"📋 Don't forget to bring your ID and insurance card.\n"
+            f"🔢 Booking Reference: {booking_result.get('booking_reference', 'N/A')}\n"
+            f"📄 Booking details saved to: bookings/booking_{booking_result.get('booking_reference', 'N/A')}.json\n"
+            f"\n🎉 Booking completed successfully!\n"
+            f"📧 A confirmation email has been sent to your registered email.\n"
+            f"📱 You will also receive an SMS confirmation.\n"
+        )
+        # Main menu prompt
+        main_menu = (
+            "\nWhat would you like to do?\n"
+            "1) Diagnosis (disease prediction)\n"
+            "2) Find a doctor\n"
+            "3) Find a hospital\n"
+            "4) Book hospital appointment\n"
+            "5) I am done / Exit\n"
+            "(Type 'undo' to go back and enter your location.)\n"
+            "Enter 1, 2, 3, 4, or 5:"
+        )
+        prompt = details + confirm + main_menu
+        self.current_state = 'main_menu'
+        return {
+            'prompt': prompt,
+            'options': ["1", "2", "3", "4", "5", "undo"],
+            'state': 'main_menu'
+        }
 
     def api_handle_follow_up_question(self, user_input):
         """Handle a follow-up question answer, update state, and continue diagnosis or ask next question"""
@@ -1165,6 +1437,34 @@ class APIChatbotInterface(ChatbotInterface):
             })
         return recommendations
 
+    def api_handle_exit_confirm(self, user_input):
+        user_input = user_input.strip().lower()
+        if user_input == 'undo':
+            self.current_state = 'awaiting_location'
+            return {
+                'prompt': 'Please enter your location (city or country):',
+                'options': [],
+                'state': self.current_state
+            }
+        if user_input in ['yes', 'y']:
+            self.current_state = 'session_end'
+            prompt = '\n👋 Thank you for using the Healthcare Chatbot! Have a great day! 🙏'
+            return {
+                'prompt': prompt,
+                'options': [],
+                'state': self.current_state
+            }
+        elif user_input in ['no', 'n']:
+            self.current_state = 'main_menu'
+            return self.api_get_main_menu()
+        else:
+            prompt = 'Please enter yes/y or no/n.\nAre you sure you want to exit? (yes/y or no/n):'
+            return {
+                'prompt': prompt,
+                'options': ['yes', 'y', 'no', 'n', 'undo'],
+                'state': self.current_state
+            }
+
 @app.post("/start_session", response_model=StartSessionResponse)
 async def start_session():
     """Start a new chatbot session"""
@@ -1236,6 +1536,22 @@ async def send_message(request: SendMessageRequest):
         response = chatbot.api_handle_free_text_input(request.user_input)
     elif chatbot.current_state == "diagnosis_symptom_edit":
         response = chatbot.api_handle_symptom_edit(request.user_input)
+    elif chatbot.current_state == "booking_location":
+        response = chatbot.api_handle_booking_location(request.user_input)
+    elif chatbot.current_state == "booking_hospital_select":
+        response = chatbot.api_handle_booking_hospital_select(request.user_input)
+    elif chatbot.current_state == "booking_patient_name":
+        response = chatbot.api_handle_booking_patient_name(request.user_input)
+    elif chatbot.current_state == "booking_patient_phone":
+        response = chatbot.api_handle_booking_patient_phone(request.user_input)
+    elif chatbot.current_state == "booking_date_select":
+        response = chatbot.api_handle_booking_date_select(request.user_input)
+    elif chatbot.current_state == "booking_time_select":
+        response = chatbot.api_handle_booking_time_select(request.user_input)
+    elif chatbot.current_state == "booking_confirm":
+        response = chatbot.api_handle_booking_confirm(request.user_input)
+    elif chatbot.current_state == "booking_result":
+        response = chatbot.api_handle_booking_result()
     else:
         response = {"prompt": "Unknown state.", "options": [], "state": chatbot.current_state}
 

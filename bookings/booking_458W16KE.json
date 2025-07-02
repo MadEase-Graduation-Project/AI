@@ -1,0 +1,11 @@
+{
+  "status": "confirmed",
+  "booking_reference": "458W16KE",
+  "hospital_id": "unknown",
+  "patient_name": "samaa",
+  "patient_phone": "010",
+  "appointment_date": "2025-07-04",
+  "appointment_time": "09:00 AM",
+  "symptoms": null,
+  "booking_timestamp": "2025-07-03T02:14:37.029692"
+}
