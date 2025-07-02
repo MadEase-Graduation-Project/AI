@@ -877,8 +877,10 @@ class APIChatbotInterface(ChatbotInterface):
                     f"     Specialty: {doc.get('specialization', 'N/A')}\n"
                     f"     Location: {doc.get('city', 'N/A')}, {doc.get('country', 'N/A')}\n"
                     f"     Phone: {doc.get('phone', 'N/A')}\n"
-                    f"     Rating: {doc.get('rate', 'N/A')}\n"
+                    f"     Rating: {doc.get('rate', 'N/A')}/5\n"
                     f"     Gender: {doc.get('gender', 'N/A')}\n"
+                    f"     Image: {doc.get('ImgUrl', 'N/A')}\n"
+                    f"     Profile: {doc.get('Url', 'N/A')}\n"
                 )
         else:
             output.append(f"No doctors found for specialty '{specialty}' in {location}.")
@@ -890,8 +892,10 @@ class APIChatbotInterface(ChatbotInterface):
                         f"     Specialty: {doc.get('specialization', 'N/A')}\n"
                         f"     Location: {doc.get('city', 'N/A')}, {doc.get('country', 'N/A')}\n"
                         f"     Phone: {doc.get('phone', 'N/A')}\n"
-                        f"     Rating: {doc.get('rate', 'N/A')}\n"
+                        f"     Rating: {doc.get('rate', 'N/A')}/5\n"
                         f"     Gender: {doc.get('gender', 'N/A')}\n"
+                        f"     Image: {doc.get('ImgUrl', 'N/A')}\n"
+                        f"     Profile: {doc.get('Url', 'N/A')}\n"
                     )
             else:
                 output.append(f"No doctors found for specialty '{specialty}' in any location.")
@@ -947,13 +951,29 @@ class APIChatbotInterface(ChatbotInterface):
         if filtered_hospitals:
             output.append(f"\nHospitals in {hosp_location}:")
             for hosp in filtered_hospitals[:5]:  # Show top 5 hospitals
-                output.append(f"   - {hosp.get('name', 'Unknown')}")
+                output.append(
+                    f"- Name: {hosp.get('name', 'Unknown')}\n"
+                    f"   \U0001F4CD Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}\n"
+                    f"   \U0001F4DE Emergency Phone: {hosp.get('phone', 'N/A')}\n"
+                    f"   \u2B50 Rating: {hosp.get('rate', 'N/A')}/5\n"
+                    f"   \U0001F3D7\uFE0F  Established: {hosp.get('Established', 'N/A')}\n"
+                    f"   \U0001F310 Profile: {hosp.get('Url', 'N/A')}\n"
+                    f"---------------------------"
+                )
         else:
             output.append(f"No hospitals found in {hosp_location}.")
             if all_hospitals:
                 output.append(f"\nAvailable hospitals in other locations:")
                 for hosp in all_hospitals:
-                    output.append(f"   - {hosp.get('name', 'Unknown')}")
+                    output.append(
+                        f"- Name: {hosp.get('name', 'Unknown')}\n"
+                        f"   \U0001F4CD Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}\n"
+                        f"   \U0001F4DE Emergency Phone: {hosp.get('phone', 'N/A')}\n"
+                        f"   \u2B50 Rating: {hosp.get('rate', 'N/A')}/5\n"
+                        f"   \U0001F3D7\uFE0F  Established: {hosp.get('Established', 'N/A')}\n"
+                        f"   \U0001F310 Profile: {hosp.get('Url', 'N/A')}\n"
+                        f"---------------------------"
+                    )
             else:
                 output.append(f"No hospitals found in any location.")
         
