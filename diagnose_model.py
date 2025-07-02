@@ -28,7 +28,7 @@ def analyze_model_performance():
     
     # Get predictions
     y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)
+    y_pred_proba = model.predict_proba(X_test if isinstance(X_test, pd.DataFrame) else pd.DataFrame(X_test, columns=preprocessor.cols))
     
     # Calculate confidence scores
     max_probs = np.max(y_pred_proba, axis=1)
@@ -109,9 +109,8 @@ def analyze_model_performance():
         
         # Create input vector
         input_vector = [1 if symptom in symptoms else 0 for symptom in preprocessor.cols]
-        
-        # Get prediction
-        proba = model.predict_proba([input_vector])[0]
+        input_df = pd.DataFrame([input_vector], columns=preprocessor.cols)
+        proba = model.predict_proba(input_df)[0]
         top_3_idx = np.argsort(proba)[::-1][:3]
         top_3_diseases = le.inverse_transform(top_3_idx)
         top_3_confidences = proba[top_3_idx]

@@ -84,7 +84,7 @@ def realistic_evaluation():
 
     # Show top 3 predictions for first 5 test cases
     print("\n--- Top 3 Predictions for First 5 Test Cases ---")
-    proba = clf.predict_proba(X_test)
+    proba = clf.predict_proba(X_test if isinstance(X_test, pd.DataFrame) else pd.DataFrame(X_test, columns=preprocessor.cols))
     for i in range(min(5, len(X_test))):
         top3_idx = np.argsort(proba[i])[::-1][:3]
         top3_diseases = le.inverse_transform(top3_idx)

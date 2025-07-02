@@ -5,6 +5,8 @@ import uuid
 from chatbot_interface import ChatbotInterface
 from data_preprocessing_fixed import DataPreprocessorFixed
 # ModelTrainer is defined locally in this file
+import time
+import difflib
 
 app = FastAPI(title="Healthcare Chatbot API")
 
@@ -73,6 +75,13 @@ class APIChatbotInterface(ChatbotInterface):
         self.current_state = "initializing"
         self.last_prompt = ""
         self.last_options = []
+        # --- New for follow-up logic ---
+        self.denied_symptoms = set()
+        self.previously_asked_symptoms = set()
+        self.follow_up_questions = []
+        self.follow_up_round = 0
+        self.max_follow_up_rounds = 2
+        self.diagnosis_context = {}  # Store context for diagnosis session
         
     def api_get_info(self):
         """API version of getInfo - returns structured response"""
@@ -239,25 +248,30 @@ class APIChatbotInterface(ChatbotInterface):
     def api_handle_symptom_input(self, symptom_input):
         print("DEBUG: api_handle_symptom_input called")
         """API version of symptom input handling"""
+        if symptom_input.strip().lower() == "undo":
+            self.current_state = "diagnosis_method"
+            return {
+                'prompt': "Please choose input method:\n1) Traditional (one symptom at a time)\n2) Free text (write all symptoms in one sentence)\nEnter 1 or 2:",
+                'options': ["1", "2", "undo"],
+                'state': self.current_state
+            }
         # Use the EXACT same logic as CLI
         corrected = self.handle_single_symptom_input(symptom_input)
-        
         if len(corrected) == 1:
             self.symptoms = corrected
             self.current_state = "diagnosis_review"
             prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
-            options = ["yes", "y", "no", "n"]
+            options = ["yes", "y", "no", "n", "undo"]
         elif len(corrected) > 1:
             self.current_state = "symptom_clarification"
             prompt = (f"You entered '{symptom_input}'. Please specify the type(s):\n" +
                       '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(corrected)]) +
                       "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
-            options = [str(i+1) for i in range(len(corrected))] + ["0"]
+            options = [str(i+1) for i in range(len(corrected))] + ["0", "undo"]
         else:
             self.current_state = "diagnosis_symptom"
             prompt = "Symptom not recognized. Please try again.\nEnter the symptom you are experiencing ->"
             options = ["undo"]
-        
         return {
             'prompt': prompt,
             'options': options,
@@ -328,43 +342,105 @@ class APIChatbotInterface(ChatbotInterface):
         }
     
     def api_make_diagnosis(self):
-        """API version of diagnosis - uses EXACT same logic as CLI"""
+        """API version of diagnosis - uses EXACT same logic as CLI, now with follow-up escalation"""
         # Use the EXACT same prediction logic as CLI
-        denied_symptoms = set()
-        predicted_disease, confidence, top_3_diseases, top_3_confidences, should_make_prediction, follow_up_questions, safety_warnings, risk_level, denied_symptoms = self.predict_disease_with_medical_validation(self.symptoms, denied_symptoms)
-        
-        # Format response exactly like CLI
+        denied_symptoms = getattr(self, 'denied_symptoms', set())
+        previously_asked_symptoms = getattr(self, 'previously_asked_symptoms', set())
+        follow_up_round = getattr(self, 'follow_up_round', 0)
+        max_follow_up_rounds = getattr(self, 'max_follow_up_rounds', 2)
+        symptoms = self.symptoms
+
+        # Run prediction
+        predicted_disease, confidence, top_3_diseases, top_3_confidences, should_make_prediction, follow_up_questions, safety_warnings, risk_level, denied_symptoms = self.predict_disease_with_medical_validation(
+            symptoms, denied_symptoms
+        )
         conf_str = f"{confidence * 100:.1f}%" if confidence is not None else "Unknown"
-        
-        # Get description and precautions
+
+        # Store context for follow-up
+        self.diagnosis_context = {
+            'predicted_disease': predicted_disease,
+            'confidence': confidence,
+            'top_3_diseases': top_3_diseases,
+            'top_3_confidences': top_3_confidences,
+            'should_make_prediction': should_make_prediction,
+            'follow_up_questions': follow_up_questions,
+            'safety_warnings': safety_warnings,
+            'risk_level': risk_level,
+            'denied_symptoms': denied_symptoms,
+            'previously_asked_symptoms': previously_asked_symptoms,
+            'follow_up_round': follow_up_round,
+            'symptoms': symptoms.copy(),
+        }
+
+        # If follow-up questions are needed and we haven't hit the max rounds, ask them
+        if follow_up_questions and follow_up_round < max_follow_up_rounds:
+            self.current_state = "diagnosis_follow_up"
+            self.follow_up_questions = follow_up_questions
+            self.denied_symptoms = denied_symptoms
+            self.previously_asked_symptoms = previously_asked_symptoms
+            self.follow_up_round = follow_up_round
+            # Ask the first follow-up question
+            question = follow_up_questions[0]
+            formatted = question.replace("Critical: ", "").replace("Important: ", "")
+            prompt = f"I need more information for a reliable diagnosis.\nCurrent symptoms: {', '.join(self.symptoms)}\nPotential concern: {predicted_disease} ({conf_str} confidence)\n\nPlease answer:\n{question}? (yes/y or no/n)"
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n", "undo"],
+                'state': self.current_state,
+                'question': question,
+                'symptoms': self.symptoms
+            }
+        # Otherwise, return the diagnosis
         description = self.data_preprocessor.description_list.get(predicted_disease, "")
         precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
-        
-        # Format output exactly like CLI
         output = []
         output.append(f"\n🩺 Diagnosis: {predicted_disease}")
         output.append(f"Confidence: {conf_str}")
-        
         if description:
             output.append(f"\n📋 Description: {description}")
-        
         if precautions:
             output.append("\n💊 Take the following precautions:")
             for i, precaution in enumerate(precautions, 1):
                 if precaution.strip():
                     output.append(f"   {i+1}) {precaution}")
-        
         output.append("\n⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-        
-        self.current_state = "diagnosis_complete"
+        # --- Instead of setting diagnosis_complete, go to main_menu ---
+        self.current_state = "main_menu"
+        # Reset follow-up state for next diagnosis
+        self.denied_symptoms = set()
+        self.previously_asked_symptoms = set()
+        self.follow_up_questions = []
+        self.follow_up_round = 0
+        self.diagnosis_context = {}
+        doctor_recommendations = self._get_doctor_recommendations_data(predicted_disease)
+        # Add doctor summary to prompt
+        doctor_lines = []
+        if doctor_recommendations:
+            doctor_lines.append("\n🩺 Recommended Doctors:")
+            for doc in doctor_recommendations:
+                line = f"- {doc['name']} ({doc['specialization']}, {doc['city']}, {doc['country']}, Rating: {doc['rate']})"
+                doctor_lines.append(line)
+        else:
+            doctor_lines.append("\n⚠️  No doctor recommendations available for this diagnosis and location.")
+        # --- Append main menu prompt ---
+        main_menu_prompt = ("\n\nWhat would you like to do?\n"
+            "1) Diagnosis (disease prediction)\n"
+            "2) Find a doctor\n"
+            "3) Find a hospital\n"
+            "4) Book hospital appointment\n"
+            "5) I am done / Exit\n"
+            "(Type 'undo' to go back and enter your location.)\n"
+            "Enter 1, 2, 3, 4, or 5:")
+        full_prompt = '\n'.join(output + doctor_lines) + main_menu_prompt
         return {
-            'prompt': '\n'.join(output),
-            'options': ["undo"],
+            'prompt': full_prompt,
+            'options': ["1", "2", "3", "4", "5", "undo"],
             'state': self.current_state,
             'diagnosis': {
                 'disease': predicted_disease,
                 'confidence': confidence,
-                'top_3': list(zip(top_3_diseases, top_3_confidences))
+                'top_3': list(zip(top_3_diseases, top_3_confidences)),
+                'doctors': doctor_recommendations
             }
         }
     
@@ -475,7 +551,6 @@ class APIChatbotInterface(ChatbotInterface):
     def api_handle_free_text_review(self, choice):
         """API version of free text review menu handling"""
         if choice == "1":
-            # Add a symptom
             self.current_state = "free_text_add_symptom"
             return {
                 'prompt': "Enter the symptom you want to add:",
@@ -483,14 +558,12 @@ class APIChatbotInterface(ChatbotInterface):
                 'state': self.current_state
             }
         elif choice == "2":
-            # Remove a symptom
             if len(self.symptoms) == 1:
                 return {
                     'prompt': "You only have one symptom. You cannot remove it.\n" + self.api_get_free_text_review_menu()['prompt'],
                     'options': ["1", "2", "3", "4", "undo"],
                     'state': self.current_state
                 }
-            
             self.current_state = "free_text_remove_symptom"
             formatted_symptoms = [f"{i}) {self._format_symptom_name(s)}" for i, s in enumerate(self.symptoms, 1)]
             prompt = "Which symptom would you like to remove?\n" + "\n".join(formatted_symptoms)
@@ -500,7 +573,6 @@ class APIChatbotInterface(ChatbotInterface):
                 'state': self.current_state
             }
         elif choice == "3":
-            # Edit all symptoms
             self.current_state = "free_text_edit_all"
             return {
                 'prompt': "Enter the full, final list of symptoms separated by commas (or type 'undo' to go back):",
@@ -508,7 +580,6 @@ class APIChatbotInterface(ChatbotInterface):
                 'state': self.current_state
             }
         elif choice == "4":
-            # Continue with current symptoms
             self.current_state = "diagnosis_days"
             return {
                 'prompt': "Okay. For how many days have you had these symptoms? : ",
@@ -729,28 +800,29 @@ class APIChatbotInterface(ChatbotInterface):
     def api_handle_symptom_clarification(self, user_input):
         """API version of symptom clarification"""
         user_input = user_input.strip()
-        
+        if user_input.lower() == "undo":
+            self.current_state = "diagnosis_symptom"
+            return {
+                'prompt': "Enter the symptom you are experiencing ->",
+                'options': ["undo"],
+                'state': self.current_state
+            }
         # Parse user selection
         selected = [x.strip() for x in user_input.split(',') if x.strip().isdigit()]
         indices = [int(x) for x in selected if x != "0"]
-        
-        # Get the clarification options from the current state
-        # This is a simplified version - in a real implementation, you'd store these in session data
         corrected = self.handle_single_symptom_input("")  # This is a placeholder
-        
         chosen = []
         if corrected and indices:
             for idx in indices:
                 if 1 <= idx <= len(corrected):
                     chosen.append(corrected[idx-1])
-        
         if chosen:
             self.symptoms = chosen
             self.current_state = "diagnosis_review"
             prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
             return {
                 'prompt': prompt,
-                'options': ["yes", "y", "no", "n"],
+                'options': ["yes", "y", "no", "n", "undo"],
                 'state': self.current_state
             }
         else:
@@ -763,7 +835,7 @@ class APIChatbotInterface(ChatbotInterface):
             }
     
     def api_handle_doctor_search(self, user_input):
-        """API version of doctor search"""
+        """API version of doctor search with fuzzy specialty correction"""
         if user_input.strip().lower() == "undo":
             self.current_state = "awaiting_location"
             return {
@@ -771,31 +843,59 @@ class APIChatbotInterface(ChatbotInterface):
                 'options': [],
                 'state': self.current_state
             }
-        
-        # Simulate doctor lookup (same as CLI)
         specialty = user_input.strip()
         location = getattr(self, 'location', 'your area')
-        
-        # Use the EXACT same logic as CLI
         doctors = self.get_doctors_by_specialization(specialty)
         location_doctors = [doc for doc in doctors if doc.get('location', '').strip().lower() == str(location).strip().lower()]
-        
         output = []
+        # Fuzzy correction if no doctors found
+        if not doctors:
+            # Get all unique specializations from all doctors
+            all_doctors = self.get_doctors_by_specialization("")
+            all_specialties = set(doc.get('specialization', '').strip() for doc in all_doctors if doc.get('specialization'))
+            close_matches = difflib.get_close_matches(specialty, all_specialties, n=1, cutoff=0.7)
+            if close_matches:
+                corrected = close_matches[0]
+                doctors = self.get_doctors_by_specialization(corrected)
+                location_doctors = [doc for doc in doctors if doc.get('location', '').strip().lower() == str(location).strip().lower()]
+                output.append(f"Did you mean: '{corrected}'? Showing results for '{corrected}'.")
+                specialty = corrected
+            else:
+                output.append(f"No doctors found for specialty '{specialty}' in any location.")
+                output.append("\nDo you want to search for another doctor? (yes/y or no/n):")
+                self.current_state = "doctor_search_again"
+                return {
+                    'prompt': '\n'.join(output),
+                    'options': ["yes", "y", "no", "n", "undo"],
+                    'state': self.current_state
+                }
         if location_doctors:
             output.append(f"\nDoctors specializing in {specialty} in {location}:")
             for doc in location_doctors:
-                output.append(f"   - {doc.get('name', 'Unknown')} ({doc.get('specialization', 'N/A')})")
+                output.append(
+                    f"   - Name: {doc.get('name', 'Unknown')}\n"
+                    f"     Specialty: {doc.get('specialization', 'N/A')}\n"
+                    f"     Location: {doc.get('city', 'N/A')}, {doc.get('country', 'N/A')}\n"
+                    f"     Phone: {doc.get('phone', 'N/A')}\n"
+                    f"     Rating: {doc.get('rate', 'N/A')}\n"
+                    f"     Gender: {doc.get('gender', 'N/A')}\n"
+                )
         else:
             output.append(f"No doctors found for specialty '{specialty}' in {location}.")
             if doctors:
                 output.append(f"\nDoctors specializing in {specialty} in other locations:")
                 for doc in doctors:
-                    output.append(f"   - {doc.get('name', 'Unknown')} ({doc.get('specialization', 'N/A')})")
+                    output.append(
+                        f"   - Name: {doc.get('name', 'Unknown')}\n"
+                        f"     Specialty: {doc.get('specialization', 'N/A')}\n"
+                        f"     Location: {doc.get('city', 'N/A')}, {doc.get('country', 'N/A')}\n"
+                        f"     Phone: {doc.get('phone', 'N/A')}\n"
+                        f"     Rating: {doc.get('rate', 'N/A')}\n"
+                        f"     Gender: {doc.get('gender', 'N/A')}\n"
+                    )
             else:
                 output.append(f"No doctors found for specialty '{specialty}' in any location.")
-        
         output.append("\nDo you want to search for another doctor? (yes/y or no/n):")
-        
         self.current_state = "doctor_search_again"
         return {
             'prompt': '\n'.join(output),
@@ -931,6 +1031,120 @@ class APIChatbotInterface(ChatbotInterface):
                 'state': self.current_state
             }
 
+    def api_handle_follow_up_question(self, user_input):
+        """Handle a follow-up question answer, update state, and continue diagnosis or ask next question"""
+        user_input = user_input.strip().lower()
+        # Restore context
+        ctx = self.diagnosis_context
+        symptoms = ctx.get('symptoms', self.symptoms)
+        denied_symptoms = set(ctx.get('denied_symptoms', set()))
+        previously_asked_symptoms = set(ctx.get('previously_asked_symptoms', set()))
+        follow_up_questions = ctx.get('follow_up_questions', [])
+        follow_up_round = ctx.get('follow_up_round', 0)
+        max_follow_up_rounds = self.max_follow_up_rounds
+        question = follow_up_questions[0] if follow_up_questions else None
+        # Parse the symptom from the question
+        if question:
+            if question.startswith("Critical: "):
+                symptom = question.replace("Critical: ", "").replace(" ", "_")
+            elif question.startswith("Important: "):
+                symptom = question.replace("Important: ", "").replace(" ", "_")
+            else:
+                symptom = question.replace(" ", "_")
+        else:
+            symptom = None
+        # Update symptoms/denials
+        if user_input in ["yes", "y"] and symptom:
+            if symptom not in symptoms:
+                symptoms.append(symptom)
+            previously_asked_symptoms.add(symptom)
+        elif user_input in ["no", "n"] and symptom:
+            denied_symptoms.add(symptom)
+            previously_asked_symptoms.add(symptom)
+        elif user_input == "undo":
+            # Go back to previous state (could be improved)
+            self.current_state = "diagnosis_days"
+            return {
+                'prompt': "Okay. For how many days have you had these symptoms? : ",
+                'options': ["undo"],
+                'state': self.current_state
+            }
+        # Remove the answered question
+        follow_up_questions = follow_up_questions[1:]
+        # If more follow-up questions in this round, ask next
+        if follow_up_questions:
+            self.diagnosis_context = {
+                'predicted_disease': ctx.get('predicted_disease'),
+                'confidence': ctx.get('confidence'),
+                'top_3_diseases': ctx.get('top_3_diseases'),
+                'top_3_confidences': ctx.get('top_3_confidences'),
+                'should_make_prediction': ctx.get('should_make_prediction'),
+                'follow_up_questions': follow_up_questions,
+                'safety_warnings': ctx.get('safety_warnings'),
+                'risk_level': ctx.get('risk_level'),
+                'denied_symptoms': denied_symptoms,
+                'previously_asked_symptoms': previously_asked_symptoms,
+                'follow_up_round': follow_up_round,
+                'symptoms': symptoms,
+            }
+            self.current_state = "diagnosis_follow_up"
+            next_question = follow_up_questions[0]
+            formatted = next_question.replace("Critical: ", "").replace("Important: ", "")
+            prompt = f"Please answer:\n{next_question}? (yes/y or no/n)"
+            return {
+                'prompt': prompt,
+                'options': ["yes", "y", "no", "n", "undo"],
+                'state': self.current_state,
+                'question': next_question,
+                'symptoms': symptoms
+            }
+        # Otherwise, increment round and re-run prediction
+        follow_up_round += 1
+        self.denied_symptoms = denied_symptoms
+        self.previously_asked_symptoms = previously_asked_symptoms
+        self.follow_up_round = follow_up_round
+        self.symptoms = symptoms
+        return self.api_make_diagnosis()
+
+    def _get_doctor_recommendations_data(self, predicted_disease):
+        """Return doctor recommendations as a list of dicts for the API response."""
+        recommendations = []
+        specialization = self.disease_to_specialty.get(predicted_disease, None)
+        if not specialization:
+            return recommendations
+        doctors = self.get_doctors_by_specialization(specialization)
+        if not doctors:
+            return recommendations
+        filtered_doctors = []
+        if self.user_location:
+            location_lower = self.user_location.lower().strip()
+            for doc in doctors:
+                doc_city = str(doc.get('city', '')).lower().strip()
+                doc_country = str(doc.get('country', '')).lower().strip()
+                doc_location = f"{doc_city} {doc_country}".strip()
+                if (location_lower in doc_location or 
+                    doc_city in location_lower or 
+                    doc_country in location_lower):
+                    filtered_doctors.append(doc)
+        # If no doctors in location, show all
+        top_doctors = filtered_doctors if filtered_doctors else doctors
+        # Sort by rating
+        top_doctors = sorted(top_doctors, key=lambda d: self._extract_rating_value(d), reverse=True)
+        # Limit to top 5
+        for doc in top_doctors[:5]:
+            recommendations.append({
+                'name': doc.get('name', 'Unknown'),
+                'specialization': doc.get('specialization', 'N/A'),
+                'city': doc.get('city', 'N/A'),
+                'country': doc.get('country', 'N/A'),
+                'phone': doc.get('phone', 'N/A'),
+                'rate': doc.get('rate', 'N/A'),
+                'gender': doc.get('gender', 'N/A'),
+                'img_url': doc.get('ImgUrl'),
+                'profile_url': doc.get('Url'),
+            })
+        return recommendations
+
 @app.post("/start_session", response_model=StartSessionResponse)
 async def start_session():
     """Start a new chatbot session"""
@@ -950,81 +1164,62 @@ async def start_session():
 @app.post("/send_message", response_model=SendMessageResponse)
 async def send_message(request: SendMessageRequest):
     """Send a message to the chatbot and get response"""
-    if request.session_id not in sessions:
+    chatbot = sessions.get(request.session_id)
+    if not chatbot:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    session = sessions[request.session_id]
-    
-    print(f"DEBUG: Current state: {session.current_state}")
-    print(f"DEBUG: User input: {request.user_input}")
-    
-    try:
-        # Route to appropriate handler based on current state
-        if session.current_state == "awaiting_name":
-            response = session.api_handle_name(request.user_input)
-        elif session.current_state == "awaiting_location":
-            response = session.api_handle_location(request.user_input)
-        elif session.current_state == "main_menu":
-            response = session.api_handle_main_menu(request.user_input)
-        elif session.current_state == "diagnosis_method":
-            response = session.api_handle_diagnosis_method(request.user_input)
-        elif session.current_state == "diagnosis_free_text":
-            response = session.api_handle_free_text_input(request.user_input)
-        elif session.current_state == "free_text_review":
-            response = session.api_handle_free_text_review(request.user_input)
-        elif session.current_state == "free_text_add_symptom":
-            response = session.api_handle_free_text_add_symptom(request.user_input)
-        elif session.current_state == "free_text_remove_symptom":
-            response = session.api_handle_free_text_remove_symptom(request.user_input)
-        elif session.current_state == "free_text_edit_all":
-            response = session.api_handle_free_text_edit_all(request.user_input)
-        elif session.current_state == "diagnosis_symptom":
-            response = session.api_handle_symptom_input(request.user_input)
-        elif session.current_state == "diagnosis_review":
-            response = session.api_handle_diagnosis_review(request.user_input)
-        elif session.current_state == "diagnosis_days":
-            response = session.api_handle_days_input(request.user_input)
-        elif session.current_state == "diagnosis_symptom_edit":
-            print("DEBUG: Calling api_handle_symptom_edit")
-            response = session.api_handle_symptom_edit(request.user_input)
-            print(f"DEBUG: api_handle_symptom_edit returned: {response}")
-        elif session.current_state == "diagnosis_related":
-            response = session.api_handle_related_symptoms(request.user_input)
-        elif session.current_state == "symptom_clarification":
-            response = session.api_handle_symptom_clarification(request.user_input)
-        elif session.current_state == "doctor_search":
-            response = session.api_handle_doctor_search(request.user_input)
-        elif session.current_state == "doctor_search_again":
-            response = session.api_handle_doctor_search_again(request.user_input)
-        elif session.current_state == "hospital_search":
-            response = session.api_handle_hospital_search(request.user_input)
-        elif session.current_state == "hospital_search_again":
-            response = session.api_handle_hospital_search_again(request.user_input)
-        elif session.current_state == "booking_menu":
-            response = session.api_handle_booking_menu(request.user_input)
-        elif session.current_state == "exit_confirm":
-            response = session.api_handle_exit_confirm(request.user_input)
-        else:
-            response = {
-                'prompt': f"Unknown state: {session.current_state}. Please restart.",
-                'options': [],
-                'state': session.current_state
-            }
-    except Exception as e:
-        print(f"DEBUG: Exception in send_message: {e}")
-        import traceback
-        traceback.print_exc()
-        response = {
-            'prompt': f"Error occurred: {str(e)}. Please restart.",
-            'options': [],
-            'state': session.current_state
-        }
-    
-    return SendMessageResponse(
-        prompt=response['prompt'],
-        options=response['options'],
-        state=response['state']
-    )
+    if chatbot.current_state == "diagnosis_ready":
+        response = chatbot.api_make_diagnosis()
+    elif chatbot.current_state == "awaiting_name":
+        response = chatbot.api_handle_name(request.user_input)
+    elif chatbot.current_state == "awaiting_location":
+        response = chatbot.api_handle_location(request.user_input)
+    elif chatbot.current_state == "main_menu":
+        response = chatbot.api_handle_main_menu(request.user_input)
+    elif chatbot.current_state == "diagnosis_method":
+        response = chatbot.api_handle_diagnosis_method(request.user_input)
+    elif chatbot.current_state == "diagnosis_symptom":
+        response = chatbot.api_handle_symptom_input(request.user_input)
+    elif chatbot.current_state == "diagnosis_review":
+        response = chatbot.api_handle_diagnosis_review(request.user_input)
+    elif chatbot.current_state == "diagnosis_days":
+        response = chatbot.api_handle_days_input(request.user_input)
+    elif chatbot.current_state == "diagnosis_follow_up":
+        response = chatbot.api_handle_follow_up_question(request.user_input)
+    elif chatbot.current_state == "symptom_clarification":
+        response = chatbot.api_handle_symptom_clarification(request.user_input)
+    elif chatbot.current_state == "free_text_review":
+        response = chatbot.api_handle_free_text_review(request.user_input)
+    elif chatbot.current_state == "free_text_add_symptom":
+        response = chatbot.api_handle_free_text_add_symptom(request.user_input)
+    elif chatbot.current_state == "free_text_remove_symptom":
+        response = chatbot.api_handle_free_text_remove_symptom(request.user_input)
+    elif chatbot.current_state == "free_text_edit_all":
+        response = chatbot.api_handle_free_text_edit_all(request.user_input)
+    elif chatbot.current_state == "related_symptoms":
+        response = chatbot.api_handle_related_symptoms(request.user_input)
+    elif chatbot.current_state == "doctor_search":
+        response = chatbot.api_handle_doctor_search(request.user_input)
+    elif chatbot.current_state == "doctor_search_again":
+        response = chatbot.api_handle_doctor_search_again(request.user_input)
+    elif chatbot.current_state == "hospital_search":
+        response = chatbot.api_handle_hospital_search(request.user_input)
+    elif chatbot.current_state == "hospital_search_again":
+        response = chatbot.api_handle_hospital_search_again(request.user_input)
+    elif chatbot.current_state == "booking_menu":
+        response = chatbot.api_handle_booking_menu(request.user_input)
+    elif chatbot.current_state == "exit_confirm":
+        response = chatbot.api_handle_exit_confirm(request.user_input)
+    elif chatbot.current_state == "diagnosis_related":
+        response = chatbot.api_handle_related_symptoms(request.user_input)
+    elif chatbot.current_state == "diagnosis_free_text":
+        response = chatbot.api_handle_free_text_input(request.user_input)
+    elif chatbot.current_state == "diagnosis_symptom_edit":
+        response = chatbot.api_handle_symptom_edit(request.user_input)
+    else:
+        response = {"prompt": "Unknown state.", "options": [], "state": chatbot.current_state}
+
+    return response
 
 @app.get("/symptoms")
 async def get_symptoms():

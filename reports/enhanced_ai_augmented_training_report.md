@@ -15,7 +15,7 @@
 - **CV Accuracy**: 0.9787 (+/- 0.0353)
 
 ## Confidence Analysis
-- **Mean Confidence**: 0.9665
+- **Mean Confidence**: 0.9664
 - **High Confidence (≥70%)**: 161/164 (98.2%)
 - **Medium Confidence (50-70%)**: 3/164 (1.8%)
 - **Low Confidence (<50%)**: 0/164 (0.0%)

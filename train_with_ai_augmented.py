@@ -103,7 +103,7 @@ class EnhancedAITrainingPipeline:
         
         # Basic predictions
         y_pred = model_to_evaluate.predict(self.X_test)
-        y_pred_proba = model_to_evaluate.predict_proba(self.X_test)
+        y_pred_proba = model_to_evaluate.predict_proba(self.X_test if isinstance(self.X_test, pd.DataFrame) else pd.DataFrame(self.X_test, columns=self.X_train.columns))
         
         # Accuracy
         accuracy = accuracy_score(self.y_test, y_pred)

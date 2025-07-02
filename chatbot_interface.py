@@ -399,15 +399,14 @@ class ChatbotInterface:
         """Predict disease with universal medical validation and intelligent follow-up questions"""
         if denied_symptoms is None:
             denied_symptoms = set()
-            
         # Calculate symptom severity
         severity_score, severity_level, high_severity_symptoms, present_symptoms = self.calculate_symptom_severity(confirmed_symptoms)
-        
         # Create input vector using severity scores
         input_vector = [self.data_preprocessor.severityDictionary.get(feature, 0) if feature in confirmed_symptoms else 0 for feature in self.feature_names]
-        
+        # Fix: Use DataFrame to avoid sklearn warning
+        input_df = pd.DataFrame([input_vector], columns=self.feature_names)
         # Get prediction probabilities
-        predicted_proba = self.model_trainer.clf.predict_proba([input_vector])[0]
+        predicted_proba = self.model_trainer.clf.predict_proba(input_df)[0]
         
         # Get top 3 predictions
         top_3_indices = np.argsort(predicted_proba)[::-1][:3]
