@@ -312,15 +312,6 @@ class APIChatbotInterface(ChatbotInterface):
     
     def api_handle_days_input(self, days_input):
         """API version of days input handling"""
-        if days_input.strip().lower() == "undo":
-            self.current_state = "diagnosis_review"
-            prompt = f"Here are the symptoms I have: {', '.join(self.symptoms)}\nWould you like to change this symptom? (yes/y or no/n)\n-> "
-            return {
-                'prompt': prompt,
-                'options': ["yes", "y", "no", "n"],
-                'state': self.current_state
-            }
-        
         try:
             num_days = int(days_input)
             self.days = num_days
@@ -333,16 +324,14 @@ class APIChatbotInterface(ChatbotInterface):
                 if rels:
                     formatted_symptom = self._format_symptom_name(rels[0])
                     prompt = f"Are you experiencing any of these related symptoms?\n{formatted_symptom}? (yes/y or no/n or back): "
-                    options = ["yes", "y", "no", "n", "back", "undo"]
+                    options = ["yes", "y", "no", "n", "back"]
                 else:
-                    # No related symptoms, proceed to diagnosis
                     return self.api_make_diagnosis()
             else:
-                # No related symptoms, proceed to diagnosis
                 return self.api_make_diagnosis()
         except ValueError:
             prompt = "Please enter a valid number for days:"
-            options = ["undo"]
+            options = []
         
         return {
             'prompt': prompt,
@@ -407,6 +396,21 @@ class APIChatbotInterface(ChatbotInterface):
             filtered_hospitals, all_hospitals = self.get_hospitals_by_location(user_location) if user_location else ([], [])
             description = self.data_preprocessor.description_list.get(predicted_disease, "")
             precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+            # --- STRUCTURED DIAGNOSIS OBJECT ---
+            diagnosis_obj = {
+                'disease': predicted_disease,
+                'confidence': confidence,
+                'description': description,
+                'precautions': precautions,
+                'emergency': True,
+                'emergency_number': emergency_number,
+                'hospitals': filtered_hospitals,
+                'top_3': list(zip(top_3_diseases, top_3_confidences)),
+                'doctors': [],  # No doctor recommendations for emergency
+                'risk_level': risk_level,
+                'safety_warnings': safety_warnings,
+                'symptoms': symptoms,
+            }
             output = []
             output.append(f"\n🚨 EMERGENCY ALERT: {predicted_disease} detected!")
             output.append(f"⚠️  This is a medical emergency requiring immediate hospital care.")
@@ -461,18 +465,29 @@ class APIChatbotInterface(ChatbotInterface):
                 'prompt': full_prompt,
                 'options': ["1", "2", "3", "4", "5", "undo"],
                 'state': self.current_state,
-                'diagnosis': {
-                    'disease': predicted_disease,
-                    'confidence': confidence,
-                    'top_3': list(zip(top_3_diseases, top_3_confidences)),
-                    'hospitals': filtered_hospitals
-                }
+                'diagnosis': diagnosis_obj
             }
         # --- END EMERGENCY LOGIC ---
 
         # Otherwise, return the diagnosis (non-emergency)
         description = self.data_preprocessor.description_list.get(predicted_disease, "")
         precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+        doctor_recommendations = self._get_doctor_recommendations_data(predicted_disease)
+        # --- STRUCTURED DIAGNOSIS OBJECT ---
+        diagnosis_obj = {
+            'disease': predicted_disease,
+            'confidence': confidence,
+            'description': description,
+            'precautions': precautions,
+            'emergency': False,
+            'emergency_number': None,
+            'hospitals': [],
+            'top_3': list(zip(top_3_diseases, top_3_confidences)),
+            'doctors': doctor_recommendations,
+            'risk_level': risk_level,
+            'safety_warnings': safety_warnings,
+            'symptoms': symptoms,
+        }
         output = []
         output.append(f"\n🩺 Diagnosis: {predicted_disease}")
         output.append(f"Confidence: {conf_str}")
@@ -484,13 +499,6 @@ class APIChatbotInterface(ChatbotInterface):
                 if precaution.strip():
                     output.append(f"   {i+1}) {precaution}")
         output.append("\n⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-        self.current_state = "main_menu"
-        self.denied_symptoms = set()
-        self.previously_asked_symptoms = set()
-        self.follow_up_questions = []
-        self.follow_up_round = 0
-        self.diagnosis_context = {}
-        doctor_recommendations = self._get_doctor_recommendations_data(predicted_disease)
         doctor_lines = []
         if doctor_recommendations:
             doctor_lines.append("\n🩺 Recommended Doctors:")
@@ -514,16 +522,17 @@ class APIChatbotInterface(ChatbotInterface):
             "(Type 'undo' to go back and enter your location.)\n"
             "Enter 1, 2, 3, 4, or 5:")
         full_prompt = '\n'.join(output + doctor_lines) + main_menu_prompt
+        self.current_state = "main_menu"
+        self.denied_symptoms = set()
+        self.previously_asked_symptoms = set()
+        self.follow_up_questions = []
+        self.follow_up_round = 0
+        self.diagnosis_context = {}
         return {
             'prompt': full_prompt,
             'options': ["1", "2", "3", "4", "5", "undo"],
             'state': self.current_state,
-            'diagnosis': {
-                'disease': predicted_disease,
-                'confidence': confidence,
-                'top_3': list(zip(top_3_diseases, top_3_confidences)),
-                'doctors': doctor_recommendations
-            }
+            'diagnosis': diagnosis_obj
         }
     
     def api_handle_symptom_edit(self, symptom_input):
@@ -780,10 +789,6 @@ class APIChatbotInterface(ChatbotInterface):
     
     def api_handle_free_text_remove_symptom(self, choice):
         """API version of removing symptom in free text mode"""
-        if choice.strip().lower() == "undo":
-            self.current_state = "free_text_review"
-            return self.api_get_free_text_review_menu()
-        
         try:
             remove_choice = int(choice)
             if 1 <= remove_choice <= len(self.symptoms):
@@ -793,20 +798,20 @@ class APIChatbotInterface(ChatbotInterface):
                 self.current_state = "free_text_review"
                 return {
                     'prompt': prompt,
-                    'options': ["1", "2", "3", "4", "undo"],
+                    'options': ["1", "2", "3", "4"],
                     'state': self.current_state,
                     'symptoms': self.symptoms
                 }
             else:
                 return {
                     'prompt': "Invalid choice. Please try again.\n" + self.api_get_free_text_review_menu()['prompt'],
-                    'options': ["1", "2", "3", "4", "undo"],
+                    'options': ["1", "2", "3", "4"],
                     'state': self.current_state
                 }
         except ValueError:
             return {
                 'prompt': "Please enter a valid number.\n" + self.api_get_free_text_review_menu()['prompt'],
-                'options': ["1", "2", "3", "4", "undo"],
+                'options': ["1", "2", "3", "4"],
                 'state': self.current_state
             }
     
@@ -892,14 +897,14 @@ class APIChatbotInterface(ChatbotInterface):
                 prompt = f"{formatted}? (yes/y or no/n or back)"
                 return {
                     'prompt': prompt,
-                    'options': ["yes", "y", "no", "n", "back", "undo"],
+                    'options': ["yes", "y", "no", "n", "back"],
                     'state': self.current_state
                 }
             else:
                 prompt = 'Already at the first related symptom.'
                 return {
                     'prompt': prompt,
-                    'options': ["yes", "y", "no", "n", "back", "undo"],
+                    'options': ["yes", "y", "no", "n", "back"],
                     'state': self.current_state
                 }
         
@@ -914,7 +919,7 @@ class APIChatbotInterface(ChatbotInterface):
             prompt = f"Please enter yes/y, no/n, or back.\n{formatted}? (yes/y or no/n or back)"
             return {
                 'prompt': prompt,
-                'options': ["yes", "y", "no", "n", "back", "undo"],
+                'options': ["yes", "y", "no", "n", "back"],
                 'state': self.current_state
             }
         
@@ -925,7 +930,7 @@ class APIChatbotInterface(ChatbotInterface):
             prompt = f"{formatted}? (yes/y or no/n or back)"
             return {
                 'prompt': prompt,
-                'options': ["yes", "y", "no", "n", "back", "undo"],
+                'options': ["yes", "y", "no", "n", "back"],
                 'state': self.current_state
             }
         else:
@@ -941,17 +946,8 @@ class APIChatbotInterface(ChatbotInterface):
     def api_handle_symptom_clarification(self, user_input):
         """API version of symptom clarification"""
         user_input = user_input.strip()
-        if user_input.lower() == "undo":
-            self.current_state = "diagnosis_symptom"
-            return {
-                'prompt': "Enter the symptom you are experiencing ->",
-                'options': ["undo"],
-                'state': self.current_state
-            }
-        # Parse user selection
         selected = [x.strip() for x in user_input.split(',') if x.strip().isdigit()]
         indices = [int(x) for x in selected if x != "0"]
-        # Use stored options for clarification
         options = getattr(self, 'symptom_clarification_options', [])
         chosen = []
         if options and indices:
@@ -972,7 +968,7 @@ class APIChatbotInterface(ChatbotInterface):
             prompt = "Enter the symptom you are experiencing ->"
             return {
                 'prompt': prompt,
-                'options': ["undo"],
+                'options': [],
                 'state': self.current_state
             }
     
@@ -1189,11 +1185,11 @@ class APIChatbotInterface(ChatbotInterface):
         if getattr(self, 'user_location', None) and (not user_input or user_input.strip().lower() == self.user_location.strip().lower()):
             location = self.user_location
         else:
-            if user_input.strip().lower() == 'undo':
+            # Only allow undo at the very first booking location prompt (if CLI does)
+            location = user_input.strip()
+            if not location:
                 self.current_state = 'main_menu'
                 return self.api_get_main_menu()
-            location = user_input.strip()
-            # Optionally update self.user_location if user enters a new location
             if location:
                 self.user_location = location
         self.booking_context['location'] = location
@@ -1208,10 +1204,10 @@ class APIChatbotInterface(ChatbotInterface):
                     prompt += f"- {hosp.get('name', 'Unknown')} ({hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')})\n"
             else:
                 prompt += "No hospitals found in any location."
-            prompt += "\nEnter another city/country or 'undo' to return."
+            prompt += "\nEnter another city/country."
             return {
                 'prompt': prompt,
-                'options': ['undo'],
+                'options': [],
                 'state': 'booking_location'
             }
         # Show hospitals
