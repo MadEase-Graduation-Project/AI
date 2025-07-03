@@ -1,3 +1,2 @@
 models/enhanced_ai_augmented_model.joblib filter=lfs diff=lfs merge=lfs -text
-/models/enhanced_ai_augmented_label_encoder.joblib filter=lfs diff=lfs merge=lfs -text
 models/enhanced_ai_augmented_label_encoder.joblib filter=lfs diff=lfs merge=lfs -text
