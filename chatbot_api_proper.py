@@ -507,22 +507,13 @@ class APIChatbotInterface(ChatbotInterface):
             }
     
     def api_handle_free_text_input(self, user_text):
-        print("DEBUG: api_handle_free_text_input called")
-        """API version of free text symptom input"""
-        if user_text.strip().lower() == "undo":
-            self.current_state = "diagnosis_method"
-            return {
-                'prompt': "Please choose input method:\n1) Traditional (one symptom at a time)\n2) Free text (write all symptoms in one sentence)\nEnter 1 or 2:",
-                'options': ["1", "2", "undo"],
-                'state': self.current_state
-            }
-        
-        # Use the EXACT same logic as CLI
-        import re
+        """API version of free text symptom input handling"""
+        # Tokenize and clean input
         leading_phrases = [
-            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r"^i'm ", r'^i got ', r'^i\s+',
             r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
         ]
+        import re
         tokens = re.split(r',| and | و | و|,|\band\b', user_text)
         cleaned_tokens = []
         for t in tokens:
@@ -533,34 +524,89 @@ class APIChatbotInterface(ChatbotInterface):
             if t:
                 t = t.replace(' ', '_')
                 cleaned_tokens.append(t)
-        
-        corrected = []
+        # Now, for each token, check for ambiguity
+        self.free_text_tokens = cleaned_tokens.copy()  # Store for clarification
+        self.free_text_symptom_results = []  # Will store (token, options) pairs
+        self.free_text_selected_symptoms = []  # Final selected symptoms
         for token in cleaned_tokens:
-            corrected.extend(self.handle_single_symptom_input(token))
-        
-        if not corrected:
-            # No symptoms extracted, switch to traditional mode
-            self.current_state = "diagnosis_symptom"
-            return {
-                'prompt': "No symptoms extracted. Switching to traditional mode.\nEnter the symptom you are experiencing ->",
-                'options': ["undo"],
-                'state': self.current_state
-            }
-        
-        # Store the symptoms and show the review menu
-        self.symptoms = corrected
+            options = self.handle_single_symptom_input(token)
+            if len(options) > 1:
+                # Ambiguous, need clarification
+                self.current_state = 'free_text_symptom_clarification'
+                self.free_text_clarify_token = token
+                self.free_text_clarify_options = options
+                prompt = (f"You entered '{token}'. Please specify the type(s):\n" +
+                          '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(options)]) +
+                          "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
+                options_list = [str(i+1) for i in range(len(options))] + ["0", "undo"]
+                return {
+                    'prompt': prompt,
+                    'options': options_list,
+                    'state': self.current_state
+                }
+            elif len(options) == 1:
+                self.free_text_selected_symptoms.append(options[0])
+            # else: skip unrecognized
+        # If no ambiguities, proceed to review
+        self.symptoms = self.free_text_selected_symptoms
         self.current_state = "free_text_review"
-        return self.api_get_free_text_review_menu()
-    
-    def api_get_free_text_review_menu(self):
-        """Get the free text review menu"""
-        formatted_symptoms = [self._format_symptom_name(s) for s in self.symptoms]
-        prompt = f"\nHere are the symptoms I have: {', '.join(formatted_symptoms)}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
+        prompt = f"\nHere are the symptoms I have: {', '.join([self._format_symptom_name(s) for s in self.symptoms])}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
         return {
             'prompt': prompt,
             'options': ["1", "2", "3", "4", "undo"],
-            'state': self.current_state,
-            'symptoms': self.symptoms
+            'state': self.current_state
+        }
+
+    def api_handle_free_text_symptom_clarification(self, user_input):
+        """Handle clarification for ambiguous symptoms in free text mode"""
+        user_input = user_input.strip()
+        if user_input.lower() == "undo":
+            self.current_state = "free_text_review"
+            prompt = f"\nHere are the symptoms I have: {', '.join([self._format_symptom_name(s) for s in self.free_text_selected_symptoms])}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
+            return {
+                'prompt': prompt,
+                'options': ["1", "2", "3", "4", "undo"],
+                'state': self.current_state
+            }
+        selected = [x.strip() for x in user_input.split(',') if x.strip().isdigit()]
+        indices = [int(x) for x in selected if x != "0"]
+        options = getattr(self, 'free_text_clarify_options', [])
+        if options and indices:
+            for idx in indices:
+                if 1 <= idx <= len(options):
+                    self.free_text_selected_symptoms.append(options[idx-1])
+        # Remove the clarified token from the list and continue with the rest
+        if hasattr(self, 'free_text_tokens') and self.free_text_clarify_token in self.free_text_tokens:
+            self.free_text_tokens.remove(self.free_text_clarify_token)
+        # Now process the next token, if any
+        while self.free_text_tokens:
+            token = self.free_text_tokens.pop(0)
+            opts = self.handle_single_symptom_input(token)
+            if len(opts) > 1:
+                # Need clarification for this token
+                self.current_state = 'free_text_symptom_clarification'
+                self.free_text_clarify_token = token
+                self.free_text_clarify_options = opts
+                prompt = (f"You entered '{token}'. Please specify the type(s):\n" +
+                          '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(opts)]) +
+                          "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
+                options_list = [str(i+1) for i in range(len(opts))] + ["0", "undo"]
+                return {
+                    'prompt': prompt,
+                    'options': options_list,
+                    'state': self.current_state
+                }
+            elif len(opts) == 1:
+                self.free_text_selected_symptoms.append(opts[0])
+            # else: skip unrecognized
+        # If no more tokens, proceed to review
+        self.symptoms = self.free_text_selected_symptoms
+        self.current_state = "free_text_review"
+        prompt = f"\nHere are the symptoms I have: {', '.join([self._format_symptom_name(s) for s in self.symptoms])}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
+        return {
+            'prompt': prompt,
+            'options': ["1", "2", "3", "4", "undo"],
+            'state': self.current_state
         }
     
     def api_handle_free_text_review(self, choice):
@@ -609,15 +655,15 @@ class APIChatbotInterface(ChatbotInterface):
             }
     
     def api_handle_free_text_add_symptom(self, new_symptom):
-        """API version of adding symptom in free text mode"""
-        if new_symptom.strip().lower() == "undo":
+        """Handle adding a symptom in free text review mode, with clarification if ambiguous."""
+        new_symptom = new_symptom.strip()
+        if new_symptom.lower() == "undo":
             self.current_state = "free_text_review"
             return self.api_get_free_text_review_menu()
-        
-        # Use the EXACT same logic as CLI
+        # Tokenize and clean input
         import re
         leading_phrases = [
-            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r'^i\'m ', r'^i got ', r'^i\s+',
+            r'^i have ', r'^i am suffering from ', r'^i am having ', r'^i feel ', r'^i am ', r"^i'm ", r'^i got ', r'^i\s+',
             r'^my ', r'^having ', r'^suffering from ', r'^experiencing ', r'^with ', r'^and ', r'^, ', r'^\s+'
         ]
         tokens = re.split(r',| and | و | و|,|\band\b', new_symptom)
@@ -630,26 +676,39 @@ class APIChatbotInterface(ChatbotInterface):
             if t:
                 t = t.replace(' ', '_')
                 cleaned_tokens.append(t)
-        
-        added_symptoms = []
+        # For each token, check for ambiguity
         for token in cleaned_tokens:
-            corrected_tokens = self.handle_single_symptom_input(token)
-            for ct in corrected_tokens:
-                if ct not in self.symptoms:
-                    self.symptoms.append(ct)
-                    added_symptoms.append(ct)
-        
-        if added_symptoms:
-            prompt = f"Added: {', '.join(added_symptoms)}\n" + self.api_get_free_text_review_menu()['prompt']
-        else:
-            prompt = "No new symptoms added.\n" + self.api_get_free_text_review_menu()['prompt']
-        
+            options = self.handle_single_symptom_input(token)
+            if len(options) > 1:
+                # Ambiguous, need clarification
+                self.current_state = 'free_text_symptom_clarification'
+                self.free_text_clarify_token = token
+                self.free_text_clarify_options = options
+                prompt = (f"You entered '{token}'. Please specify the type(s):\n" +
+                          '\n'.join([f"  {i+1}) {opt}" for i, opt in enumerate(options)]) +
+                          "\n  0) None of these / skip\nSelect all that apply (comma-separated numbers, e.g. 1,3,5): ")
+                options_list = [str(i+1) for i in range(len(options))] + ["0", "undo"]
+                return {
+                    'prompt': prompt,
+                    'options': options_list,
+                    'state': self.current_state
+                }
+            elif len(options) == 1:
+                if options[0] not in self.symptoms:
+                    self.symptoms.append(options[0])
+                    added = options[0]
+                else:
+                    added = None
+            else:
+                added = None
+        # If all tokens processed and no ambiguity, show added message and review
+        added_names = [self._format_symptom_name(s) for s in self.symptoms]
+        prompt = f"Added: {', '.join(added_names)}\n\nHere are the symptoms I have: {', '.join(added_names)}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
         self.current_state = "free_text_review"
         return {
             'prompt': prompt,
             'options': ["1", "2", "3", "4", "undo"],
-            'state': self.current_state,
-            'symptoms': self.symptoms
+            'state': self.current_state
         }
     
     def api_handle_free_text_remove_symptom(self, choice):
@@ -1271,9 +1330,18 @@ class APIChatbotInterface(ChatbotInterface):
             return self.api_handle_booking_result()
         else:
             self.current_state = 'main_menu'
+            main_menu = ("\nWhat would you like to do?\n"
+                "1) Diagnosis (disease prediction)\n"
+                "2) Find a doctor\n"
+                "3) Find a hospital\n"
+                "4) Book hospital appointment\n"
+                "5) I am done / Exit\n"
+                "(Type 'undo' to go back and enter your location.)\n"
+                "Enter 1, 2, 3, 4, or 5:")
+            prompt = '❌ Booking cancelled. Returning to main menu.' + main_menu
             return {
-                'prompt': '❌ Booking cancelled. Returning to main menu.',
-                'options': [],
+                'prompt': prompt,
+                'options': ["1", "2", "3", "4", "5", "undo"],
                 'state': 'main_menu'
             }
 
@@ -1465,6 +1533,15 @@ class APIChatbotInterface(ChatbotInterface):
                 'state': self.current_state
             }
 
+    def api_get_free_text_review_menu(self):
+        """Return the current free text review menu prompt and options."""
+        prompt = f"\nHere are the symptoms I have: {', '.join([self._format_symptom_name(s) for s in self.symptoms])}\nWhat would you like to do?\n1) Add a symptom\n2) Remove a symptom\n3) Edit all symptoms (re-enter full list)\n4) Continue with current symptoms"
+        return {
+            'prompt': prompt,
+            'options': ["1", "2", "3", "4", "undo"],
+            'state': 'free_text_review'
+        }
+
 @app.post("/start_session", response_model=StartSessionResponse)
 async def start_session():
     """Start a new chatbot session"""
@@ -1552,6 +1629,8 @@ async def send_message(request: SendMessageRequest):
         response = chatbot.api_handle_booking_confirm(request.user_input)
     elif chatbot.current_state == "booking_result":
         response = chatbot.api_handle_booking_result()
+    elif chatbot.current_state == "free_text_symptom_clarification":
+        response = chatbot.api_handle_free_text_symptom_clarification(request.user_input)
     else:
         response = {"prompt": "Unknown state.", "options": [], "state": chatbot.current_state}
 
