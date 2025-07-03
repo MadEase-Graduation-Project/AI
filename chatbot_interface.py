@@ -91,7 +91,11 @@ class ChatbotInterface:
                 for i, opt in enumerate(similar_options):
                     print(f"  {i+1}) {opt}")
                 print(f"  0) None of these / skip")
-                selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                try:
+                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                except EOFError:
+                    print("\n❌ No input available. Skipping selection.")
+                    return corrected
                 indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
                 for idx in indices:
                     if 1 <= idx <= len(similar_options):
@@ -115,7 +119,11 @@ class ChatbotInterface:
                     for i, opt in enumerate(similar_options):
                         print(f"  {i+1}) {opt}")
                     print(f"  0) None of these / skip")
-                    selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                    try:
+                        selected = input(f"Select all that apply (comma-separated numbers, e.g. 1,3,5): ").strip()
+                    except EOFError:
+                        print("\n❌ No input available. Skipping selection.")
+                        return corrected
                     indices = [int(x) for x in selected.split(',') if x.strip().isdigit()]
                     for idx in indices:
                         if 1 <= idx <= len(similar_options):
@@ -135,7 +143,11 @@ class ChatbotInterface:
                     print(f"  {i+1}) {match}")
                 print(f"  0) None of these / skip")
                 while True:
-                    choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
+                    try:
+                        choice = input(f"Select the correct symptom for '{token}' (1-{len(matches)} or 0 to skip): ").strip()
+                    except EOFError:
+                        print("\n❌ No input available. Skipping selection.")
+                        break
                     if choice.isdigit():
                         idx = int(choice)
                         if idx == 0:
@@ -279,7 +291,15 @@ class ChatbotInterface:
     def get_valid_input(self, prompt, valid_options=None, input_type=str, symptom_mode=False):
         """Get valid input from user with error handling and fuzzy matching for symptoms if symptom_mode is True."""
         while True:
-            user_input = input(prompt).strip().lower()
+            try:
+                user_input = input(prompt).strip().lower()
+            except EOFError:
+                print("\n❌ No input available. Using default value.")
+                if valid_options:
+                    return valid_options[0]
+                if input_type == int:
+                    return 0
+                return ""
             if user_input == 'undo':
                 return 'undo'
             if user_input == 'main':
@@ -2370,12 +2390,14 @@ class ChatbotInterface:
                 choice = input(prompt).strip()
                 if allow_back and choice.lower() == 'back':
                     return 'back'
-                
                 choice_num = int(choice)
                 if min_val <= choice_num <= max_val:
                     return choice_num
                 else:
                     print(f"❌ Please enter a number between {min_val} and {max_val}.")
+            except EOFError:
+                print("\n❌ No input available. Using default value.")
+                return min_val
             except ValueError:
                 print("❌ Please enter a valid number.")
 
