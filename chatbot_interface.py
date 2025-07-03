@@ -205,7 +205,11 @@ class ChatbotInterface:
         print("-----------------------------------HealthCare ChatBot-----------------------------------")
         print("\nYour Name? \t\t\t\t\t", end="->")
         while True:
-            name = input("").strip()
+            try:
+                name = input("").strip()
+            except EOFError:
+                print("\n❌ No input available. Using default name 'User'.")
+                name = "User"
             if name.lower() == 'undo':
                 print("Undo: Please enter your name again.")
                 continue
@@ -225,7 +229,11 @@ class ChatbotInterface:
 
     def get_location(self):
         while True:
-            location = input("Please enter your location (city or country): ").strip()
+            try:
+                location = input("Please enter your location (city or country): ").strip()
+            except EOFError:
+                print("\n❌ No input available. Using default location 'Unknown'.")
+                return "Unknown"
             if location.lower() == 'undo':
                 print("Let's try entering your location again.")
                 continue  # Repeats the prompt
