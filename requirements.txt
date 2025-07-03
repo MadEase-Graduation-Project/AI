@@ -2,20 +2,31 @@
 # Install with: pip install -r requirements.txt
 
 # Core data science libraries
-matplotlib==3.10.3
 numpy==1.26.4
 pandas==2.3.0
-scikit_learn==1.7.0
+matplotlib==3.10.3
 seaborn==0.13.2
 
-# Machine learning utilities
+# Machine learning
+scikit-learn==1.7.0
 joblib==1.3.2
 
 # Natural language processing
 spacy==3.7.2
 
-# HTTP requests for API calls
+# HTTP requests
 requests==2.31.0
+
+# FastAPI and ASGI servers
+fastapi
+uvicorn
+gunicorn
+
+# For file uploads (if needed in the future)
+python-multipart
+
+# For async file serving (if you serve static files)
+aiofiles
 
 # Additional dependencies for specific sklearn modules
 # These are included in scikit_learn but listed for clarity:
@@ -26,5 +37,5 @@ requests==2.31.0
 # - sklearn.model_selection (train_test_split, cross_val_score, StratifiedKFold)
 # - sklearn.metrics (accuracy_score, classification_report, confusion_matrix)
 
-# Note: After installing spacy, you may need to download a language model:
+# Note: After installing spacy, download the language model:
 # python -m spacy download en_core_web_sm
