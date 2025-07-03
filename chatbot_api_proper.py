@@ -352,7 +352,6 @@ class APIChatbotInterface(ChatbotInterface):
     
     def api_make_diagnosis(self):
         """API version of diagnosis - uses EXACT same logic as CLI, now with follow-up escalation"""
-        # Use the EXACT same prediction logic as CLI
         denied_symptoms = getattr(self, 'denied_symptoms', set())
         previously_asked_symptoms = getattr(self, 'previously_asked_symptoms', set())
         follow_up_round = getattr(self, 'follow_up_round', 0)
@@ -399,7 +398,79 @@ class APIChatbotInterface(ChatbotInterface):
                 'question': question,
                 'symptoms': self.symptoms
             }
-        # Otherwise, return the diagnosis
+
+        # --- EMERGENCY LOGIC ---
+        specialization = self.disease_to_specialty.get(predicted_disease, None)
+        if specialization == "Emergency":
+            user_location = getattr(self, 'user_location', None)
+            emergency_number = self._get_emergency_numbers_by_location(user_location)
+            filtered_hospitals, all_hospitals = self.get_hospitals_by_location(user_location) if user_location else ([], [])
+            description = self.data_preprocessor.description_list.get(predicted_disease, "")
+            precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
+            output = []
+            output.append(f"\n🚨 EMERGENCY ALERT: {predicted_disease} detected!")
+            output.append(f"⚠️  This is a medical emergency requiring immediate hospital care.")
+            output.append(f"\n🩺 Diagnosis: {predicted_disease}")
+            output.append(f"Confidence: {conf_str}")
+            if description:
+                output.append(f"\n📋 Description: {description}")
+            if precautions:
+                output.append("\n💊 Take the following precautions:")
+                for i, precaution in enumerate(precautions, 1):
+                    if precaution.strip():
+                        output.append(f"   {i}) {precaution}")
+            output.append(f"\n🏥 Recommending nearby hospitals for emergency treatment:")
+            if filtered_hospitals:
+                output.append(f"\n🏥 Emergency Hospitals in {user_location}:")
+                for i, hosp in enumerate(filtered_hospitals[:5], 1):
+                    hosp_lines = [
+                        f"{i}. {hosp.get('name', 'Unknown')}",
+                        f"   📍 Location: {hosp.get('city', 'N/A')}, {hosp.get('country', 'N/A')}",
+                        f"   📞 Emergency Phone: {hosp.get('phone', 'N/A')}",
+                        f"   ⭐ Rating: {hosp.get('rate', 'N/A')}/5",
+                        f"   🏗️  Established: {hosp.get('Established', 'N/A')}",
+                    ]
+                    if hosp.get('Url'):
+                        hosp_lines.append(f"   🌐 Profile: {hosp.get('Url')}")
+                    hosp_lines.append("---------------------------")
+                    output.extend(hosp_lines)
+            else:
+                output.append(f"\n⚠️  No hospitals found in {user_location}")
+            output.append(f"\n🚨 IMMEDIATE ACTION REQUIRED:")
+            output.append(f"📞 Call emergency services: {emergency_number}")
+            output.append("1. Go to the nearest hospital emergency department")
+            output.append("2. Do not delay seeking medical attention")
+            output.append("3. Bring someone with you if possible")
+            output.append("\n⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
+            main_menu_prompt = ("\n\nWhat would you like to do?\n"
+                "1) Diagnosis (disease prediction)\n"
+                "2) Find a doctor\n"
+                "3) Find a hospital\n"
+                "4) Book hospital appointment\n"
+                "5) I am done / Exit\n"
+                "(Type 'undo' to go back and enter your location.)\n"
+                "Enter 1, 2, 3, 4, or 5:")
+            full_prompt = '\n'.join(output) + main_menu_prompt
+            self.current_state = "main_menu"
+            self.denied_symptoms = set()
+            self.previously_asked_symptoms = set()
+            self.follow_up_questions = []
+            self.follow_up_round = 0
+            self.diagnosis_context = {}
+            return {
+                'prompt': full_prompt,
+                'options': ["1", "2", "3", "4", "5", "undo"],
+                'state': self.current_state,
+                'diagnosis': {
+                    'disease': predicted_disease,
+                    'confidence': confidence,
+                    'top_3': list(zip(top_3_diseases, top_3_confidences)),
+                    'hospitals': filtered_hospitals
+                }
+            }
+        # --- END EMERGENCY LOGIC ---
+
+        # Otherwise, return the diagnosis (non-emergency)
         description = self.data_preprocessor.description_list.get(predicted_disease, "")
         precautions = self.data_preprocessor.precautionDictionary.get(predicted_disease, [])
         output = []
@@ -413,16 +484,13 @@ class APIChatbotInterface(ChatbotInterface):
                 if precaution.strip():
                     output.append(f"   {i+1}) {precaution}")
         output.append("\n⚠️  Disclaimer: This is for informational purposes only. Please consult a healthcare professional for proper diagnosis.")
-        # --- Instead of setting diagnosis_complete, go to main_menu ---
         self.current_state = "main_menu"
-        # Reset follow-up state for next diagnosis
         self.denied_symptoms = set()
         self.previously_asked_symptoms = set()
         self.follow_up_questions = []
         self.follow_up_round = 0
         self.diagnosis_context = {}
         doctor_recommendations = self._get_doctor_recommendations_data(predicted_disease)
-        # Add doctor summary to prompt
         doctor_lines = []
         if doctor_recommendations:
             doctor_lines.append("\n🩺 Recommended Doctors:")
@@ -437,7 +505,6 @@ class APIChatbotInterface(ChatbotInterface):
                 doctor_lines.append(line)
         else:
             doctor_lines.append("\n⚠️  No doctor recommendations available for this diagnosis and location.")
-        # --- Append main menu prompt ---
         main_menu_prompt = ("\n\nWhat would you like to do?\n"
             "1) Diagnosis (disease prediction)\n"
             "2) Find a doctor\n"
