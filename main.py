@@ -8,6 +8,8 @@ import os
 import sys
 import warnings
 import argparse
+from fastapi import FastAPI
+
 warnings.filterwarnings('ignore')
 
 # Add the current directory to Python path
@@ -23,6 +25,12 @@ from config import (
     MODELS_DIR,
     REPORTS_DIR
 )
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"message": "Healthcare Chatbot API is running."}
 
 def create_directories():
     """Create necessary directories"""
