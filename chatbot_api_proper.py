@@ -8,6 +8,9 @@ from data_preprocessing_fixed import DataPreprocessorFixed
 import time
 import difflib
 from config import MODELS_DIR, TIME_SLOTS, APPOINTMENT_DAYS_AHEAD, BOOKING_ARRIVAL_MINUTES
+import joblib
+import os
+import gdown
 
 app = FastAPI(title="Healthcare Chatbot API")
 
@@ -25,11 +28,38 @@ data_preprocessor = DataPreprocessorFixed()
 data_preprocessor.initialize_all(use_augmented=False, use_ai_augmented=False, use_safe_augmented=True)
 
 # Load the enhanced model
-import joblib
-import os
+print("[DEBUG] Setting model and encoder paths")
+
+# Google Drive URLs (convert to direct download links)
+MODEL_URL = "https://drive.google.com/uc?id=1MlbmQ__QzSrhah9qDfx6gUtiAuRya-fw"
+ENCODER_URL = "https://drive.google.com/uc?id=1FqPO8TpbMM-w8SfZfD6YYKPtb0giQmHn"
 
 model_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_model.joblib")
 encoder_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_label_encoder.joblib")
+
+# Create models directory if it doesn't exist
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+# Download model files if they don't exist
+print("[DEBUG] Checking for model files...")
+
+if not os.path.exists(model_path):
+    print("[DEBUG] Downloading model file from Google Drive...")
+    try:
+        gdown.download(MODEL_URL, model_path, quiet=False)
+        print("[DEBUG] Model file downloaded successfully")
+    except Exception as e:
+        print(f"[DEBUG] Error downloading model: {e}")
+        raise SystemExit("❌ Failed to download model file. Exiting.")
+
+if not os.path.exists(encoder_path):
+    print("[DEBUG] Downloading encoder file from Google Drive...")
+    try:
+        gdown.download(ENCODER_URL, encoder_path, quiet=False)
+        print("[DEBUG] Encoder file downloaded successfully")
+    except Exception as e:
+        print(f"[DEBUG] Error downloading encoder: {e}")
+        raise SystemExit("❌ Failed to download encoder file. Exiting.")
 
 # Debug: Print model file sizes
 try:
@@ -39,11 +69,13 @@ except Exception as e:
     print("[DEBUG] Error checking model file sizes:", e)
 
 if not os.path.exists(model_path) or not os.path.exists(encoder_path):
-    raise FileNotFoundError("Enhanced model files not found. Please run main.py first to train the model.")
+    raise FileNotFoundError("Enhanced model files not found. Please check Google Drive URLs.")
 
 try:
+    print("[DEBUG] Loading model files...")
     model = joblib.load(model_path)
     label_encoder = joblib.load(encoder_path)
+    print("[DEBUG] Model files loaded successfully!")
 except Exception as e:
     print(f"❌ Error loading enhanced model: {e}")
     raise SystemExit("❌ Failed to load enhanced model. Exiting.")

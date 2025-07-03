@@ -39,3 +39,4 @@ aiofiles
 
 # Note: After installing spacy, download the language model:
 # python -m spacy download en_core_web_sm
+gdown==4.7.1
