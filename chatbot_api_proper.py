@@ -31,11 +31,22 @@ import os
 model_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_model.joblib")
 encoder_path = os.path.join(MODELS_DIR, "enhanced_ai_augmented_label_encoder.joblib")
 
+# Debug: Print model file sizes
+try:
+    print("[DEBUG] Model file size:", os.path.getsize(model_path), "bytes")
+    print("[DEBUG] Encoder file size:", os.path.getsize(encoder_path), "bytes")
+except Exception as e:
+    print("[DEBUG] Error checking model file sizes:", e)
+
 if not os.path.exists(model_path) or not os.path.exists(encoder_path):
     raise FileNotFoundError("Enhanced model files not found. Please run main.py first to train the model.")
 
-model = joblib.load(model_path)
-label_encoder = joblib.load(encoder_path)
+try:
+    model = joblib.load(model_path)
+    label_encoder = joblib.load(encoder_path)
+except Exception as e:
+    print(f"❌ Error loading enhanced model: {e}")
+    raise SystemExit("❌ Failed to load enhanced model. Exiting.")
 
 # Create model trainer
 class ModelTrainer:
